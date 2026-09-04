@@ -1,0 +1,143 @@
+{
+  "age": "24 days ago",
+  "applyUrl": "https://careers-sazerac.icims.com/jobs/16020/job",
+  "attributes": [
+    "Partnership strategy",
+    "Power BI",
+    "Performance improvement leadership",
+    "Product development project management",
+    "Data visualization software proficiency",
+    "Management",
+    "Process design",
+    "Sales volume growth",
+    "Yearly pay",
+    "Improving operational efficiency",
+    "Health insurance",
+    "Dental insurance",
+    "401(k)",
+    "Hiring",
+    "Recruitment and selection",
+    "Product development projects",
+    "Bachelor's degree",
+    "Paid time off",
+    "Recruiting",
+    "Organizational skills",
+    "Networking through strategic partnership building",
+    "Vision insurance",
+    "Productivity software",
+    "Process improvement planning",
+    "Implementation of strategic initiatives",
+    "Senior level",
+    "Strategic partnerships",
+    "Leadership",
+    "Risk assessment implementation",
+    "Project stakeholder communication",
+    "Cross-functional communication",
+    "Data analysis software",
+    "10 years"
+  ],
+  "benefits": [
+    "Health insurance",
+    "Dental insurance",
+    "401(k)",
+    "Paid time off",
+    "Vision insurance"
+  ],
+  "companyAddresses": [
+    "Louisville, KY"
+  ],
+  "companyBriefDescription": "Sazerac Company produces and markets the most award-winning bourbons and whiskeys in the world....",
+  "companyCeo": {
+    "name": "Jake Wenz",
+    "photoUrl": "",
+    "startDate": null
+  },
+  "companyDescription": "Sazerac Company produces and markets the most award-winning bourbons and whiskeys in the world, including Buffalo Trace,...",
+  "companyFounded": {
+    "year": 1850
+  },
+  "companyHeaderUrl": "https://d2q79iu7y748jz.cloudfront.net/s/_headerimage/1960x400/2eb4561065c35e46d2e9e76c29ccfd5e",
+  "companyLinks": {
+    "corporateWebsite": "https://www.sazerac.com",
+    "customLinks": [
+      {
+        "name": "Careers Page",
+        "url": "https://www.sazerac.com/our-company/careers.html"
+      }
+    ],
+    "facebook": "https://www.facebook.com/SazeracCompany",
+    "instagram": "https://www.instagram.com/sazeraccompanyofficial",
+    "twitter": null
+  },
+  "companyLogoUrl": "https://d2q79iu7y748jz.cloudfront.net/s/_squarelogo/256x256/cf683ca116ed308ffe88a59596149b81",
+  "companyName": "Sazerac",
+  "companyNumEmployees": "5,001 to 10,000",
+  "companyRevenue": "Decline to state",
+  "companyUrl": "https://www.indeed.com/cmp/Sazerac-8",
+  "contacts": [
+    {
+      "contactEmail": null,
+      "contactName": null,
+      "contactPhone": null,
+      "contactTypes": []
+    }
+  ],
+  "datePublished": "2026-08-07",
+  "descriptionHtml": "<div><div>As the <b>Innovation Program Manager for North America</b>, you will be in instrumental in the successful deli...",
+  "descriptionText": "As the Innovation Program Manager for North America, you will be in instrumental in the successful delivery of innovatio...",
+  "emails": [],
+  "expired": false,
+  "hiringDemand": {
+    "isHighVolumeHiring": false,
+    "isUrgentHire": false
+  },
+  "isRemote": false,
+  "isSponsored": false,
+  "jobKey": "9469a6c64f921677",
+  "jobType": [],
+  "jobUrl": "https://www.indeed.com/viewjob?jk=9469a6c64f921677",
+  "language": "en",
+  "locale": "us",
+  "location": {
+    "city": "Louisville",
+    "country": "United States",
+    "countryCode": "US",
+    "formattedAddressLong": "Louisville, KY 40223",
+    "formattedAddressShort": "Louisville, KY",
+    "fullAddress": "Louisville, KY 40223",
+    "latitude": 38.25594,
+    "longitude": -85.51404,
+    "postalCode": "40223",
+    "streetAddress": "10101 Linn Station Rd Ascent Plaza"
+  },
+  "occupation": [
+    "Administrative & Business Operations Occupations",
+    "Business Project Management Occupations"
+  ],
+  "postedToday": false,
+  "rating": {
+    "count": 205,
+    "rating": 2.7
+  },
+  "requirements": [],
+  "salary": {
+    "salaryCurrency": "USD",
+    "salaryMax": 190000,
+    "salaryMin": 126000,
+    "salarySource": "EXTRACTION",
+    "salaryText": "$126,000 - $190,000 a year",
+    "salaryType": "yearly"
+  },
+  "scrapingInfo": {
+    "index": 1,
+    "page": 1
+  },
+  "shiftAndSchedule": [],
+  "shifts": [],
+  "socialInsurance": [
+    "Health insurance"
+  ],
+  "source": "Sazerac Company",
+  "title": "Innovation Program Manager",
+  "workingSystem": []
+}

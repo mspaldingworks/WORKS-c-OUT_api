@@ -1,0 +1,10 @@
+Django==5.1.4
+djangorestframework==3.15.2
+psycopg2-binary==2.9.10
+django-redis==5.4.0
+gunicorn==23.0.0
+whitenoise==6.8.2
+python-dotenv==1.0.1
+anthropic==1.2.0
+gspread==6.1.4
+reportlab==4.2.5

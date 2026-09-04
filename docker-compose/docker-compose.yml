@@ -1,0 +1,41 @@
+name: works-c-out-api-dev
+
+services:
+  db:
+    image: postgres:15-alpine
+    env_file:
+      - ../api/.env
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+
+  web:
+    build:
+      context: ../api
+    entrypoint: ["sh", "-c"]
+    command: ["python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"]
+    env_file:
+      - ../api/.env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+      DJANGO_DEBUG: "true"
+    volumes:
+      - ../api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  dev_postgres_data:

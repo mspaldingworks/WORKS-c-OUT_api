@@ -1,0 +1,54 @@
+name: works-c-out-api
+
+networks:
+  works_c_out_internal:
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    env_file:
+      - ../api/.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - /srv/docker/works-c-out-api/postgres:/var/lib/postgresql/data
+    networks:
+      - works_c_out_internal
+
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    mem_limit: 64m
+    networks:
+      - works_c_out_internal
+
+  web:
+    build:
+      context: ../api
+    restart: unless-stopped
+    mem_limit: 384m
+    env_file:
+      - ../api/.env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - /srv/docker/works-c-out-api/media:/app/media
+      - /srv/docker/works-c-out-api/staticfiles:/app/staticfiles
+      # Google service-account key. Lives on the host outside the rsync tree so
+      # a deploy can't delete it, and read-only so the app can't rewrite it.
+      - /srv/docker/works-c-out-api/secrets:/app/secrets:ro
+    ports:
+      - "127.0.0.1:8005:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - works_c_out_internal
