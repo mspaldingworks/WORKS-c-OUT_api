@@ -160,7 +160,7 @@ def build_documents(application):
     if not materials.get("cover_letter"):
         return []
 
-    profile = ProfessionalProfile.objects.first()
+    profile = ProfessionalProfile.objects.filter(owner=application.owner).first()
     # 45 chars keeps the longest resulting path ("applications/cover_letters/"
     # + slug + "-cover-letter.pdf") inside FileField's 100-char max_length.
     # Over it, Django truncates and appends a random suffix on every save, so

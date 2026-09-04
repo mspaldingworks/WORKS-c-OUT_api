@@ -10,11 +10,20 @@ PDF = b"%PDF-1.4 fake"
 class DriveConfigurationTests(SimpleTestCase):
     @override_settings(GOOGLE_OAUTH_CLIENT_ID="", GOOGLE_OAUTH_CLIENT_SECRET="",
                        GOOGLE_OAUTH_REFRESH_TOKEN="", JOB_DRIVE_FOLDER_ID="")
-    def test_unconfigured_names_every_missing_setting(self):
+    def test_unconfigured_names_the_missing_setting(self):
+        # _session() checks JOB_DRIVE_FOLDER_ID before user_credentials() ever
+        # checks the OAuth settings, so that's the name a caller sees first.
+        with self.assertRaises(DriveUnavailable) as caught:
+            upload_pdf("x.pdf", PDF)
+        self.assertIn("JOB_DRIVE_FOLDER_ID", str(caught.exception))
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="", GOOGLE_OAUTH_CLIENT_SECRET="",
+                       GOOGLE_OAUTH_REFRESH_TOKEN="", JOB_DRIVE_FOLDER_ID="folder-1")
+    def test_unconfigured_oauth_names_every_missing_setting(self):
         with self.assertRaises(DriveUnavailable) as caught:
             upload_pdf("x.pdf", PDF)
         message = str(caught.exception)
-        for name in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_REFRESH_TOKEN", "JOB_DRIVE_FOLDER_ID"):
+        for name in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_REFRESH_TOKEN"):
             self.assertIn(name, message)
 
     @override_settings(GOOGLE_OAUTH_CLIENT_ID="", GOOGLE_OAUTH_CLIENT_SECRET="",
@@ -22,11 +31,15 @@ class DriveConfigurationTests(SimpleTestCase):
     def test_quiet_upload_never_raises_into_a_user_action(self):
         self.assertEqual(upload_pdf_quietly("x.pdf", PDF), "")
 
-    def test_scope_is_limited_to_files_this_app_creates(self):
-        # Full "drive" scope would let a long-lived stored token read her entire
-        # Drive; the uploader only ever needs to write its own files.
+    def test_scope_is_limited_to_files_this_app_creates_plus_the_job_sheet(self):
+        # drive.file keeps this to files the app itself creates — not full Drive
+        # access — and spreadsheets is the one addition, needed because the job
+        # sheet was created by her, not by the app.
         from tracker.drive import SCOPES
-        self.assertEqual(SCOPES, ["https://www.googleapis.com/auth/drive.file"])
+        self.assertEqual(SCOPES, [
+            "https://www.googleapis.com/auth/drive.file",
+            "https://www.googleapis.com/auth/spreadsheets",
+        ])
 
 
 @override_settings(GOOGLE_OAUTH_CLIENT_ID="cid", GOOGLE_OAUTH_CLIENT_SECRET="secret",

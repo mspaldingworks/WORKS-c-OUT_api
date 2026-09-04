@@ -17,9 +17,14 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# drive.file only: access is limited to files this app creates, so the stored
-# credentials can never read the rest of her Drive.
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+# drive.file keeps Drive access to files this app creates, so the stored token
+# can never read the rest of her Drive. spreadsheets is needed on top because
+# the job sheet was created by her, not by the app, and drive.file wouldn't
+# reach it.
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/spreadsheets",
+]
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 UPLOAD_URL = "https://www.googleapis.com/upload/drive/v3/files"
 FILES_URL = "https://www.googleapis.com/drive/v3/files"
@@ -27,6 +32,36 @@ FILES_URL = "https://www.googleapis.com/drive/v3/files"
 
 class DriveUnavailable(Exception):
     """Drive sync isn't configured or couldn't be reached."""
+
+
+def user_credentials():
+    """
+    OAuth credentials for the whole app — Drive uploads and Sheets writes both.
+
+    One credential, acting as her. Service accounts can't own files in a
+    consumer Drive at all, and using one for Sheets meant every new sheet had to
+    be shared with a robot address first.
+    """
+    missing = [
+        name for name, value in (
+            ("GOOGLE_OAUTH_CLIENT_ID", settings.GOOGLE_OAUTH_CLIENT_ID),
+            ("GOOGLE_OAUTH_CLIENT_SECRET", settings.GOOGLE_OAUTH_CLIENT_SECRET),
+            ("GOOGLE_OAUTH_REFRESH_TOKEN", settings.GOOGLE_OAUTH_REFRESH_TOKEN),
+        ) if not value
+    ]
+    if missing:
+        raise DriveUnavailable(f"Google access isn't configured (needs {', '.join(missing)}).")
+
+    from google.oauth2.credentials import Credentials
+
+    return Credentials(
+        token=None,
+        refresh_token=settings.GOOGLE_OAUTH_REFRESH_TOKEN,
+        client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
+        client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
+        token_uri=TOKEN_URI,
+        scopes=SCOPES,
+    )
 
 
 def _session():
@@ -39,29 +74,12 @@ def _session():
     A user refresh token sidesteps that: files are created by her, owned by her,
     and counted against her quota.
     """
-    missing = [
-        name for name, value in (
-            ("GOOGLE_OAUTH_CLIENT_ID", settings.GOOGLE_OAUTH_CLIENT_ID),
-            ("GOOGLE_OAUTH_CLIENT_SECRET", settings.GOOGLE_OAUTH_CLIENT_SECRET),
-            ("GOOGLE_OAUTH_REFRESH_TOKEN", settings.GOOGLE_OAUTH_REFRESH_TOKEN),
-            ("JOB_DRIVE_FOLDER_ID", settings.JOB_DRIVE_FOLDER_ID),
-        ) if not value
-    ]
-    if missing:
-        raise DriveUnavailable(f"Drive upload isn't configured (needs {', '.join(missing)}).")
+    if not settings.JOB_DRIVE_FOLDER_ID:
+        raise DriveUnavailable("Drive upload isn't configured (needs JOB_DRIVE_FOLDER_ID).")
 
     import google.auth.transport.requests
-    from google.oauth2.credentials import Credentials
 
-    credentials = Credentials(
-        token=None,
-        refresh_token=settings.GOOGLE_OAUTH_REFRESH_TOKEN,
-        client_id=settings.GOOGLE_OAUTH_CLIENT_ID,
-        client_secret=settings.GOOGLE_OAUTH_CLIENT_SECRET,
-        token_uri=TOKEN_URI,
-        scopes=SCOPES,
-    )
-    return google.auth.transport.requests.AuthorizedSession(credentials)
+    return google.auth.transport.requests.AuthorizedSession(user_credentials())
 
 
 def _existing_file_id(session, name):

@@ -151,6 +151,12 @@ APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "")
 # endpoint returns a clear "not configured" message rather than failing oddly.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+# Which account unauthenticated machine callers (the ingestion webhook, Apify)
+# attach new rows to — see identity/owners.py. Falls back to "the only user
+# in the database" when unset, which is fine today (there is exactly one) but
+# would raise a clear error the moment that stops being true.
+WORKS_COUT_OWNER_EMAIL = os.environ.get("WORKS_COUT_OWNER_EMAIL", "")
+
 # Google Sheets mirror of the application pipeline. Both must be set for sync to
 # run; without them the app logs and carries on rather than failing her action.
 # The JSON key is a service-account file — share the sheet with that account's

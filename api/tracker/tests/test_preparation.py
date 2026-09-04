@@ -19,8 +19,10 @@ MATERIALS = {
 }
 
 
-def make_posting(url, title="Director of Development", score=90):
+def make_posting(url, title="Director of Development", score=90, owner=None):
+    owner = owner or get_user_model().objects.get_or_create(username="tester")[0]
     return IngestedPosting.objects.create(
+        owner=owner,
         source="apify:indeed",
         title=title,
         company_name="American Heart Association",
@@ -36,12 +38,13 @@ class PreparePostingsTests(TestCase):
     """prepare_postings runs its work on a thread; these call the body directly."""
 
     def setUp(self):
-        ProfessionalProfile.objects.create(headline="Director", master_resume="Her background.")
+        self.owner = get_user_model().objects.create_user("tester", password="x")
+        ProfessionalProfile.objects.create(owner=self.owner, headline="Director", master_resume="Her background.")
 
     def run_prepare(self, posting_ids):
         # Run the thread body synchronously so assertions aren't racing it.
         with patch("tracker.preparation.threading.Thread") as thread:
-            job = prepare_postings(posting_ids)
+            job = prepare_postings(posting_ids, self.owner)
             target, args = thread.call_args.kwargs.get("target"), thread.call_args.kwargs.get("args")
             if target is None:
                 target, args = thread.call_args[1]["target"], thread.call_args[1]["args"]
@@ -49,7 +52,7 @@ class PreparePostingsTests(TestCase):
         return get_job(job["id"])
 
     def test_creates_ready_applications_with_materials(self):
-        posting = make_posting("https://example.test/job/1")
+        posting = make_posting("https://example.test/job/1", owner=self.owner)
         with patch("ingestion.generation.generate_materials", return_value=MATERIALS) as gen:
             job = self.run_prepare([posting.pk])
 
@@ -65,7 +68,7 @@ class PreparePostingsTests(TestCase):
         self.assertEqual(posting.generated_materials["cover_letter"], MATERIALS["cover_letter"])
 
     def test_does_not_pay_to_regenerate_existing_materials(self):
-        posting = make_posting("https://example.test/job/2")
+        posting = make_posting("https://example.test/job/2", owner=self.owner)
         posting.generated_materials = MATERIALS
         posting.save(update_fields=["generated_materials"])
 
@@ -75,7 +78,7 @@ class PreparePostingsTests(TestCase):
         gen.assert_not_called()
 
     def test_one_failure_does_not_lose_the_rest_of_the_batch(self):
-        good = make_posting("https://example.test/job/3")
+        good = make_posting("https://example.test/job/3", owner=self.owner)
         missing_id = 999999
         with patch("ingestion.generation.generate_materials", return_value=MATERIALS):
             job = self.run_prepare([missing_id, good.pk])
@@ -88,7 +91,7 @@ class PreparePostingsTests(TestCase):
 
     def test_queues_the_job_even_when_generation_is_unavailable(self):
         # A posting with no letter is still worth tracking; she can write one later.
-        posting = make_posting("https://example.test/job/4")
+        posting = make_posting("https://example.test/job/4", owner=self.owner)
         from ingestion.generation import GenerationUnavailable
 
         with patch("ingestion.generation.generate_materials", side_effect=GenerationUnavailable("no key")):
@@ -102,9 +105,9 @@ class PreparePostingsTests(TestCase):
 @override_settings(ANTHROPIC_API_KEY="test-key", GOOGLE_SERVICE_ACCOUNT_FILE="", JOB_SHEET_ID="")
 class ApplicationEndpointTests(TestCase):
     def setUp(self):
-        user = get_user_model().objects.create_user("tester", password="x")
-        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=user).key}"}
-        self.posting = make_posting("https://example.test/job/5")
+        self.user = get_user_model().objects.create_user("tester", password="x")
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=self.user).key}"}
+        self.posting = make_posting("https://example.test/job/5", owner=self.user)
 
     def test_prepare_returns_a_job_id_without_blocking(self):
         url = reverse("application-prepare")
@@ -156,10 +159,10 @@ class ReviewAndApproveTests(TestCase):
     def setUp(self):
         from ingestion.services import promote_posting_to_application
 
-        user = get_user_model().objects.create_user("tester", password="x")
-        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=user).key}"}
-        ProfessionalProfile.objects.create(legal_name="Madelyn Spalding", master_resume="Background.")
-        self.posting = make_posting("https://example.test/job/review")
+        self.user = get_user_model().objects.create_user("tester", password="x")
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=self.user).key}"}
+        ProfessionalProfile.objects.create(owner=self.user, legal_name="Madelyn Spalding", master_resume="Background.")
+        self.posting = make_posting("https://example.test/job/review", owner=self.user)
         self.posting.generated_materials = MATERIALS
         self.posting.save(update_fields=["generated_materials"])
         self.application = promote_posting_to_application(self.posting)
@@ -210,7 +213,7 @@ class ReviewAndApproveTests(TestCase):
         from tracker.models import Application
 
         bare = Application.objects.create(
-            company=self.application.company, role_title="Legacy row")
+            owner=self.user, company=self.application.company, role_title="Legacy row")
         response = self.client.get(reverse("application-list"), **self.auth)
         row = next(r for r in response.json() if r["id"] == bare.pk)
         self.assertIsNone(row["generated_materials"])
@@ -234,9 +237,9 @@ class RemoveAndUndoTests(TestCase):
     def setUp(self):
         from ingestion.services import promote_posting_to_application
 
-        user = get_user_model().objects.create_user("tester", password="x")
-        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=user).key}"}
-        self.posting = make_posting("https://example.test/job/remove")
+        self.user = get_user_model().objects.create_user("tester", password="x")
+        self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=self.user).key}"}
+        self.posting = make_posting("https://example.test/job/remove", owner=self.user)
         self.posting.generated_materials = MATERIALS
         self.posting.save(update_fields=["generated_materials"])
         self.application = promote_posting_to_application(self.posting)
@@ -266,7 +269,7 @@ class RemoveAndUndoTests(TestCase):
         self.assertEqual(self.application.status, Application.Status.READY)
 
     def test_dismissing_a_posting_removes_it_from_the_feed_and_restore_returns_it(self):
-        posting = make_posting("https://example.test/job/feed-remove")
+        posting = make_posting("https://example.test/job/feed-remove", owner=self.user)
         feed = reverse("ingestedposting-list") + "?status=new"
 
         self.client.post(reverse("ingestedposting-dismiss", args=[posting.pk]), **self.auth)

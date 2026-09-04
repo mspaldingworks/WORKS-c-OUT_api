@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from tracker.serializers import ApplicationSerializer
 
 from identity.models import ProfessionalProfile
+from identity.owners import NoDefaultOwner, get_default_owner
 
 from .generation import GenerationUnavailable, generate_materials
 from .mappers import fetch_dataset_items
@@ -37,13 +38,16 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
     serializer_class = IngestedPostingSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(owner=self.request.user)
         # The Job Feed only ever wants new postings; filtering server-side keeps
         # it from pulling every posting ever scraped once the daily runs pile up.
         status_filter = self.request.query_params.get("status")
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
     @action(detail=True, methods=["post"])
     def materials(self, request, pk=None):
@@ -55,7 +59,7 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
         if posting.generated_materials and request.query_params.get("refresh") != "1":
             return Response(posting.generated_materials)
 
-        profile = ProfessionalProfile.objects.first()
+        profile = ProfessionalProfile.objects.filter(owner=request.user).first()
         try:
             materials = generate_materials(posting, profile.master_resume if profile else "")
         except GenerationUnavailable as error:
@@ -106,6 +110,11 @@ class IngestView(APIView):
         if not _has_valid_ingestion_key(request):
             return Response({"detail": "Invalid or missing ingestion key."}, status=status.HTTP_401_UNAUTHORIZED)
 
+        try:
+            owner = get_default_owner()
+        except NoDefaultOwner as error:
+            return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
         many = isinstance(request.data, list)
         serializer = IngestedPostingSerializer(data=request.data, many=many)
         serializer.is_valid(raise_exception=True)
@@ -113,12 +122,12 @@ class IngestView(APIView):
             # Savepoint, so a duplicate-key failure rolls back cleanly instead of
             # poisoning the surrounding transaction for anything that follows.
             with transaction.atomic():
-                serializer.save()
+                serializer.save(owner=owner)
         except IntegrityError:
-            # Same (source, url) already stored — the caller re-sent something we
+            # Same (owner, url) already stored — the caller re-sent something we
             # have. A clean 409 beats a 500, and beats silently duplicating.
             return Response(
-                {"detail": "A posting with this source and url already exists."},
+                {"detail": "A posting with this url already exists."},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -139,6 +148,11 @@ class ApifyWebhookView(APIView):
     def post(self, request):
         if not _has_valid_ingestion_key(request):
             return Response({"detail": "Invalid or missing ingestion key."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        try:
+            owner = get_default_owner()
+        except NoDefaultOwner as error:
+            return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         payload = request.data if isinstance(request.data, dict) else {}
 
@@ -174,4 +188,4 @@ class ApifyWebhookView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        return Response(ingest_items(items, source=source))
+        return Response(ingest_items(items, source=source, owner=owner))

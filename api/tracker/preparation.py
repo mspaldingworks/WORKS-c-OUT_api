@@ -38,7 +38,7 @@ def _save(job):
     cache.set(_job_key(job["id"]), job, JOB_TTL_SECONDS)
 
 
-def prepare_postings(posting_ids):
+def prepare_postings(posting_ids, owner):
     """Start a background prepare run. Returns the job record immediately."""
     job = {
         "id": uuid.uuid4().hex,
@@ -49,12 +49,12 @@ def prepare_postings(posting_ids):
     }
     _save(job)
 
-    thread = threading.Thread(target=_run, args=(job, list(posting_ids)), daemon=True)
+    thread = threading.Thread(target=_run, args=(job, list(posting_ids), owner), daemon=True)
     thread.start()
     return job
 
 
-def _run(job, posting_ids):
+def _run(job, posting_ids, owner):
     from ingestion.documents import build_documents
     from ingestion.generation import GenerationUnavailable, generate_materials
     from ingestion.models import IngestedPosting
@@ -64,13 +64,13 @@ def _run(job, posting_ids):
     from .models import Application
     from .sheets import sync_sheet_quietly
 
-    profile = ProfessionalProfile.objects.first()
+    profile = ProfessionalProfile.objects.filter(owner=owner).first()
     master_resume = profile.master_resume if profile else ""
 
     for posting_id in posting_ids:
         result = {"posting_id": posting_id, "ok": False, "detail": ""}
         try:
-            posting = IngestedPosting.objects.get(pk=posting_id)
+            posting = IngestedPosting.objects.get(pk=posting_id, owner=owner)
         except IngestedPosting.DoesNotExist:
             result["detail"] = "That posting no longer exists."
             job["results"].append(result)
@@ -94,7 +94,7 @@ def _run(job, posting_ids):
         try:
             with transaction.atomic():
                 application = (
-                    Application.objects.filter(source_posting=posting).first()
+                    Application.objects.filter(source_posting=posting, owner=owner).first()
                     or promote_posting_to_application(posting)
                 )
                 application.status = Application.Status.READY

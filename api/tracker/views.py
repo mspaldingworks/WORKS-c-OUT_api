@@ -12,6 +12,9 @@ from .sheets import SheetUnavailable, sync_sheet, sync_sheet_quietly
 
 
 class CompanyViewSet(viewsets.ModelViewSet):
+    # Not owner-scoped: a Company row is a shared reference (name, website),
+    # not per-account data, and isn't in the set of models this account split
+    # asked to give real ownership.
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
 
@@ -30,11 +33,14 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationSerializer
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(owner=self.request.user)
         status_filter = self.request.query_params.get("status")
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
 
     @action(detail=False, methods=["post"])
     def prepare(self, request):
@@ -51,7 +57,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 {"detail": "Send posting_ids as a non-empty list."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        return Response(prepare_postings(posting_ids), status=status.HTTP_202_ACCEPTED)
+        return Response(prepare_postings(posting_ids, request.user), status=status.HTTP_202_ACCEPTED)
 
     @action(detail=False, methods=["get"], url_path=r"prepare/(?P<job_id>[0-9a-f]+)")
     def prepare_status(self, request, job_id=None):

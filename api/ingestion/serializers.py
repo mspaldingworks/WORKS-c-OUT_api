@@ -33,7 +33,9 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
         if not hasattr(self, "_cached_skill_names"):
             from identity.models import Skill
 
-            self._cached_skill_names = tuple(Skill.objects.values_list("name", flat=True))
+            request = self.context.get("request")
+            queryset = Skill.objects.filter(owner=request.user) if request else Skill.objects.none()
+            self._cached_skill_names = tuple(queryset.values_list("name", flat=True))
         return self._cached_skill_names
 
     def _ats(self, posting):

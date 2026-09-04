@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -52,6 +53,7 @@ class Application(models.Model):
         MANUAL = "manual", "Added manually"
         INGESTED = "ingested", "From ingestion pipeline"
 
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="applications")
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="applications")
     # The posting this came from, so the sheet can show its score and generated
     # materials and the auto-filler can find the apply URL. String reference

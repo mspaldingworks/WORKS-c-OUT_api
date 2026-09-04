@@ -81,44 +81,44 @@ def _row_for(application):
 
 
 def _open_worksheet():
-    if not settings.GOOGLE_SERVICE_ACCOUNT_FILE or not settings.JOB_SHEET_ID:
-        raise SheetUnavailable(
-            "Google Sheets sync isn't configured "
-            "(needs GOOGLE_SERVICE_ACCOUNT_FILE and JOB_SHEET_ID)."
-        )
+    """
+    Opens the sheet as her, using the same OAuth credentials the Drive upload
+    uses — no service account anywhere in WORKS(c)OUT.
+
+    Family Appily used a service account here, which meant every new sheet had
+    to be shared with a robot's email address before writes stopped 403ing. One
+    user credential removes that step and the whole class of mistake with it.
+    """
+    if not settings.JOB_SHEET_ID:
+        raise SheetUnavailable("Google Sheets sync isn't configured (needs JOB_SHEET_ID).")
 
     import gspread
 
-    client = gspread.service_account(filename=settings.GOOGLE_SERVICE_ACCOUNT_FILE)
+    from .drive import user_credentials
+
+    client = gspread.authorize(user_credentials())
     try:
         spreadsheet = client.open_by_key(settings.JOB_SHEET_ID)
         try:
             return spreadsheet.worksheet(WORKSHEET_TITLE)
         except gspread.WorksheetNotFound:
             return spreadsheet.add_worksheet(title=WORKSHEET_TITLE, rows=200, cols=len(HEADERS))
+    except PermissionError as error:
+        # gspread's open_by_key swallows a 403 APIError and re-raises the
+        # builtin PermissionError, losing the message. Both real causes are
+        # things only she can fix, so name them rather than 500ing.
+        raise SheetUnavailable(
+            "Google refused the request (403). Either the Sheets API is not enabled "
+            "for the Google Cloud project, or the stored credentials are missing the "
+            "spreadsheets scope — enable the API, or re-run the OAuth flow to grant it."
+        ) from error
     except gspread.exceptions.APIError as error:
-        # By far the most common setup mistake: link-sharing grants the service
-        # account read access, so the sheet opens and only the write 403s. The
-        # raw error says "caller does not have permission", which doesn't hint
-        # at the fix, so name the account and the required role.
         if getattr(error, "response", None) is not None and error.response.status_code == 403:
             raise SheetUnavailable(
-                f"The sheet is readable but not writable. Share it with "
-                f"{_service_account_email()} as an Editor "
-                f"(link-sharing alone only grants view access)."
+                "Google refused the write. The stored credentials are missing the "
+                "spreadsheets scope — re-run the OAuth flow to grant it."
             ) from error
         raise SheetUnavailable(f"Google rejected the request: {error}") from error
-
-
-def _service_account_email():
-    """Read the client_email out of the key file, for error messages."""
-    import json
-
-    try:
-        with open(settings.GOOGLE_SERVICE_ACCOUNT_FILE) as handle:
-            return json.load(handle).get("client_email", "the service account")
-    except Exception:
-        return "the service account"
 
 
 def sync_sheet():

@@ -48,8 +48,12 @@ def stub_stream(client, text):
     return stream
 
 
-def make_posting(description="x" * 500, url="https://example.test/job/1"):
+def make_posting(description="x" * 500, url="https://example.test/job/1", owner=None):
+    from django.contrib.auth import get_user_model
+
+    owner = owner or get_user_model().objects.get_or_create(username="tester")[0]
     return IngestedPosting.objects.create(
+        owner=owner,
         source="apify:indeed",
         title="Digital Fundraising Strategy Lead",
         company_name="American Heart Association",
@@ -138,8 +142,8 @@ class MaterialsEndpointTests(TestCase):
     def setUp(self):
         user = get_user_model().objects.create_user("tester", password="x")
         self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=user).key}"}
-        self.posting = make_posting()
-        ProfessionalProfile.objects.create(headline="Director", master_resume="Her real background.")
+        self.posting = make_posting(owner=user)
+        ProfessionalProfile.objects.create(owner=user, headline="Director", master_resume="Her real background.")
 
     def url(self, refresh=False):
         base = reverse("ingestedposting-materials", args=[self.posting.pk])

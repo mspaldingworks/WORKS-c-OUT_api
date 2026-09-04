@@ -1,8 +1,14 @@
+from django.conf import settings
 from django.db import models
+
+from .validators import validate_resume_file
 
 
 class ProfessionalProfile(models.Model):
-    """Single-row bio/summary. Intended usage: exactly one instance via the admin."""
+    """Bio/summary — one row per account."""
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="professional_profile")
 
     headline = models.CharField(max_length=200, blank=True)
     summary = models.TextField(blank=True)
@@ -54,12 +60,18 @@ class Skill(models.Model):
         STRONG = "strong", "Strong"
         EXPERT = "expert", "Expert"
 
-    name = models.CharField(max_length=100, unique=True)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="skills")
+    # Not globally unique — two different accounts can each have "Python".
+    # Uniqueness is per owner instead (see Meta.constraints).
+    name = models.CharField(max_length=100)
     category = models.CharField(max_length=100, blank=True)
     proficiency = models.CharField(max_length=20, choices=Proficiency.choices, default=Proficiency.COMPETENT)
 
     class Meta:
         ordering = ["category", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "name"], name="unique_skill_name_per_owner"),
+        ]
 
     def __str__(self):
         return self.name
@@ -71,6 +83,7 @@ class ProfileLink(models.Model):
         NEEDS_UPDATE = "needs_update", "Needs update"
         STALE = "stale", "Stale"
 
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile_links")
     platform = models.CharField(max_length=100)
     url = models.URLField()
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
@@ -84,9 +97,20 @@ class ProfileLink(models.Model):
 
 
 class ResumeVersion(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="resumes")
     title = models.CharField(max_length=200)
-    file = models.FileField(upload_to="identity/resumes/")
+    file = models.FileField(upload_to="identity/resumes/", validators=[validate_resume_file])
     notes = models.TextField(blank=True)
+    # AI-extracted skill/profile suggestions from this file (see
+    # resume_parsing.py). Staged here for review — nothing here is ever
+    # written into Skill/ProfessionalProfile automatically; the Identity tab
+    # applies whichever suggestions she wants through the ordinary endpoints.
+    parsed_data = models.JSONField(default=dict, blank=True)
+    # Removing a résumé is reversible, like discarding an application: the app's
+    # own rules ask for undo rather than a confirmation dialog, and undo can only
+    # work if the row (and the parsed suggestions it cost a model call to
+    # produce) is still here. Null means active.
+    discarded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

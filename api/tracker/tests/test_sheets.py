@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
 from ingestion.models import IngestedPosting
@@ -7,8 +8,10 @@ from ingestion.services import promote_posting_to_application
 from tracker.sheets import HEADERS, MAX_CELL, SheetUnavailable, sync_sheet, sync_sheet_quietly
 
 
-def make_application(cover_letter="Dear Hiring Team, ..."):
+def make_application(cover_letter="Dear Hiring Team, ...", owner=None):
+    owner = owner or get_user_model().objects.get_or_create(username="tester")[0]
     posting = IngestedPosting.objects.create(
+        owner=owner,
         source="apify:indeed",
         title="Digital Fundraising Strategy Lead",
         company_name="American Heart Association",
@@ -28,25 +31,29 @@ def make_application(cover_letter="Dear Hiring Team, ..."):
 
 
 class SheetConfigurationTests(TestCase):
-    @override_settings(GOOGLE_SERVICE_ACCOUNT_FILE="", JOB_SHEET_ID="")
+    @override_settings(JOB_SHEET_ID="")
     def test_unconfigured_raises_a_readable_error(self):
         with self.assertRaises(SheetUnavailable) as caught:
             sync_sheet()
-        self.assertIn("GOOGLE_SERVICE_ACCOUNT_FILE", str(caught.exception))
+        self.assertIn("JOB_SHEET_ID", str(caught.exception))
 
-    @override_settings(GOOGLE_SERVICE_ACCOUNT_FILE="", JOB_SHEET_ID="")
+    @override_settings(JOB_SHEET_ID="")
     def test_quiet_sync_never_raises_into_a_user_action(self):
         # She pressed "prepare", not "write a spreadsheet" — a missing sheet
         # config must not surface as a failure of the thing she asked for.
         self.assertIsNone(sync_sheet_quietly())
 
 
-@override_settings(GOOGLE_SERVICE_ACCOUNT_FILE="/tmp/key.json", JOB_SHEET_ID="sheet-123")
+@override_settings(JOB_SHEET_ID="sheet-123", GOOGLE_OAUTH_CLIENT_ID="cid",
+                   GOOGLE_OAUTH_CLIENT_SECRET="secret", GOOGLE_OAUTH_REFRESH_TOKEN="refresh")
 class SheetSyncTests(TestCase):
     def sync_with_mock(self):
         worksheet = MagicMock()
-        with patch("gspread.service_account") as service_account:
-            service_account.return_value.open_by_key.return_value.worksheet.return_value = worksheet
+        # _open_worksheet() authorizes as her via gspread.authorize(user_credentials()),
+        # not gspread.service_account() — there's no service account anywhere in
+        # WORKS(c)OUT (see tracker/drive.py's user_credentials()).
+        with patch("gspread.authorize") as authorize:
+            authorize.return_value.open_by_key.return_value.worksheet.return_value = worksheet
             count = sync_sheet()
         return worksheet, count
 
@@ -74,8 +81,8 @@ class SheetSyncTests(TestCase):
         worksheet.clear.assert_called_once()
 
     def test_a_403_explains_how_to_fix_it(self):
-        # Link-sharing lets the service account read but not write, so this is
-        # the failure she'll actually hit. It has to name the fix.
+        # A stale OAuth grant (scope added after she authorized) is the failure
+        # she'll actually hit. It has to name the fix.
         import gspread
 
         response = MagicMock()
@@ -83,14 +90,28 @@ class SheetSyncTests(TestCase):
         error = gspread.exceptions.APIError(response)
         error.response = response
 
-        with patch("gspread.service_account") as service_account:
-            service_account.return_value.open_by_key.side_effect = error
+        with patch("gspread.authorize") as authorize:
+            authorize.return_value.open_by_key.side_effect = error
             with self.assertRaises(SheetUnavailable) as caught:
                 sync_sheet()
 
-        message = str(caught.exception)
-        self.assertIn("Editor", message)
-        self.assertIn("link-sharing", message.lower())
+        message = str(caught.exception).lower()
+        self.assertIn("scope", message)
+        self.assertIn("oauth", message)
+
+    def test_a_permission_error_becomes_a_readable_503_not_a_500(self):
+        # gspread's open_by_key catches a 403 APIError and re-raises the builtin
+        # PermissionError instead, so an `except APIError` alone misses it and
+        # the sync-sheet endpoint 500s. This is the shape a disabled Sheets API
+        # actually arrives in.
+        with patch("gspread.authorize") as authorize:
+            authorize.return_value.open_by_key.side_effect = PermissionError()
+            with self.assertRaises(SheetUnavailable) as caught:
+                sync_sheet()
+
+        message = str(caught.exception).lower()
+        self.assertIn("403", message)
+        self.assertIn("sheets api is not enabled", message)
 
     def test_long_cover_letters_are_truncated_below_the_cell_limit(self):
         # Sheets rejects the whole write if any cell is over its limit, which

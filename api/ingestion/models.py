@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -10,6 +11,9 @@ class IngestedPosting(models.Model):
         # application may point at it, and its materials cost real money.
         EXPIRED = "expired", "No longer listed"
 
+    # Ingestion has no authenticated request (it's a webhook), so this is set
+    # from identity.owners.get_default_owner() rather than request.user.
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ingested_postings")
     source = models.CharField(max_length=100, help_text="e.g. apify:indeed, rss:indeed, email")
     title = models.CharField(max_length=300)
     company_name = models.CharField(max_length=200, blank=True)
@@ -37,13 +41,14 @@ class IngestedPosting(models.Model):
             # A recurring scrape re-sees the same jobs every run, and the six
             # per-lane searches overlap heavily — "Program Manager" comes back
             # from both the programs and development queries. Dedupe on url
-            # alone rather than (source, url): the same posting is the same job
-            # no matter which search happened to surface it. Partial, because
-            # blank URLs would otherwise all collide with each other.
+            # per owner rather than globally: the same posting is the same job
+            # no matter which search happened to surface it, but two different
+            # accounts seeing the same listing must not collide with each
+            # other. Partial, because blank URLs would otherwise all collide.
             models.UniqueConstraint(
-                fields=["url"],
+                fields=["owner", "url"],
                 condition=~models.Q(url=""),
-                name="unique_posting_per_url",
+                name="unique_posting_per_url_per_owner",
             )
         ]
 

@@ -8,3 +8,4 @@ __pycache__/
 *service-account*.json
 secrets/
 .DS_Store
+.local/

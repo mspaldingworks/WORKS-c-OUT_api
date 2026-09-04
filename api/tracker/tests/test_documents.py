@@ -70,7 +70,9 @@ class DocumentRenderingTests(TestCase):
         # looks exactly like the orphaning bug this class is checking for.
         shutil.rmtree(MEDIA, ignore_errors=True)
 
+        self.user = get_user_model().objects.create_user("tester", password="x")
         ProfessionalProfile.objects.create(
+            owner=self.user,
             legal_name="Madelyn Spalding",
             email="mspaldingworks@gmail.com",
             phone="502-552-5981",
@@ -79,6 +81,7 @@ class DocumentRenderingTests(TestCase):
             master_resume=MASTER_RESUME,
         )
         self.posting = IngestedPosting.objects.create(
+            owner=self.user,
             source="apify:indeed",
             title="Director of Development",
             company_name="American Heart Association",
@@ -177,8 +180,9 @@ class DocumentEndpointTests(TestCase):
     def setUp(self):
         user = get_user_model().objects.create_user("tester", password="x")
         self.auth = {"HTTP_AUTHORIZATION": f"Token {Token.objects.create(user=user).key}"}
-        ProfessionalProfile.objects.create(legal_name="Madelyn Spalding", master_resume=MASTER_RESUME)
+        ProfessionalProfile.objects.create(owner=user, legal_name="Madelyn Spalding", master_resume=MASTER_RESUME)
         posting = IngestedPosting.objects.create(
+            owner=user,
             source="apify:indeed", title="Director of Development",
             company_name="AHA", url="https://example.test/job/2",
             raw_payload={"descriptionText": "x" * 500}, generated_materials=MATERIALS,

@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from ingestion.models import IngestedPosting
@@ -8,7 +9,9 @@ HERS = ("Fundraising", "Grant Writing", "WordPress", "Git", "CSS", "Python",
 
 
 def posting(description, title="Director of Development"):
+    owner = get_user_model().objects.get_or_create(username="tester")[0]
     return IngestedPosting.objects.create(
+        owner=owner,
         source="apify:indeed", title=title, company_name="Acme",
         url=f"https://example.test/{abs(hash(description)) % 10**8}",
         raw_payload={"descriptionText": description, "title": title})

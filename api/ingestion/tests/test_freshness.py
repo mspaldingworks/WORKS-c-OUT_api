@@ -2,6 +2,7 @@ import io
 import urllib.error
 from unittest.mock import MagicMock
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from ingestion.freshness import check_url, sweep
@@ -73,7 +74,9 @@ class CheckUrlTests(TestCase):
 
 class SweepTests(TestCase):
     def make(self, url, status=IngestedPosting.Status.NEW):
+        owner = get_user_model().objects.get_or_create(username="tester")[0]
         return IngestedPosting.objects.create(
+            owner=owner,
             source="apify:indeed", title="Program Manager", company_name="Acme",
             url=url, status=status)
 

@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from identity.models import ProfessionalProfile
+from identity.owners import NoDefaultOwner, get_default_owner
 
 DEFAULT_SOURCE = Path(__file__).resolve().parents[2] / "data" / "master_resume.md"
 
@@ -19,13 +20,15 @@ class Command(BaseCommand):
             self.stderr.write(f"No such file: {source}")
             return
 
+        try:
+            owner = get_default_owner()
+        except NoDefaultOwner as error:
+            raise CommandError(str(error))
+
         text = source.read_text().strip()
-        # The materials endpoint reads master_resume off the first profile, so
-        # write to that one; a fresh deploy has no profile row at all.
-        profile = ProfessionalProfile.objects.first()
-        created = profile is None
-        if created:
-            profile = ProfessionalProfile(headline="Director of Development")
+        profile, created = ProfessionalProfile.objects.get_or_create(
+            owner=owner, defaults={"headline": "Director of Development"}
+        )
         profile.master_resume = text
         profile.save()
 

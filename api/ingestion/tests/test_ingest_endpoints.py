@@ -77,8 +77,9 @@ class PostingStatusFilterTests(TestCase):
     def setUp(self):
         user = get_user_model().objects.create_user("tester", password="x")
         self.token = Token.objects.create(user=user)
-        IngestedPosting.objects.create(source="apify:indeed", title="New one", url="https://x.test/1")
+        IngestedPosting.objects.create(owner=user, source="apify:indeed", title="New one", url="https://x.test/1")
         IngestedPosting.objects.create(
+            owner=user,
             source="apify:indeed",
             title="Old one",
             url="https://x.test/2",
@@ -111,12 +112,15 @@ class CrossSourceDedupeTests(TestCase):
     that twice and promoted it twice, giving her two applications for one job.
     """
 
+    def setUp(self):
+        self.owner = get_user_model().objects.create_user("tester", password="x")
+
     def test_the_same_url_from_a_different_search_is_not_stored_twice(self):
         item = {"positionName": "Program Manager", "companyName": "Canon",
                 "url": "https://example.test/job/canon-pm"}
 
-        first = ingest_items([item], source="apify:indeed-programs")
-        second = ingest_items([item], source="apify:indeed-development")
+        first = ingest_items([item], source="apify:indeed-programs", owner=self.owner)
+        second = ingest_items([item], source="apify:indeed-development", owner=self.owner)
 
         self.assertEqual(first["created"], 1)
         self.assertEqual(second["created"], 0)
@@ -125,10 +129,12 @@ class CrossSourceDedupeTests(TestCase):
 
     def test_the_database_refuses_a_duplicate_url_outright(self):
         IngestedPosting.objects.create(
+            owner=self.owner,
             source="apify:indeed-programs", title="Program Manager",
             company_name="Canon", url="https://example.test/job/x")
         with self.assertRaises(IntegrityError):
             IngestedPosting.objects.create(
+                owner=self.owner,
                 source="apify:indeed-development", title="Program Manager",
                 company_name="Canon", url="https://example.test/job/x")
 
@@ -137,5 +143,6 @@ class CrossSourceDedupeTests(TestCase):
         # items have no resolvable URL and they're all legitimately distinct.
         for i in range(3):
             IngestedPosting.objects.create(
+                owner=self.owner,
                 source="apify:indeed", title=f"Role {i}", company_name="Co", url="")
         self.assertEqual(IngestedPosting.objects.filter(url="").count(), 3)

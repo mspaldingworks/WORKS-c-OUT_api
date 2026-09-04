@@ -1,6 +1,7 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
 from identity.models import ProfessionalProfile, ProfileLink
+from identity.owners import NoDefaultOwner, get_default_owner
 
 FIELDS = ["legal_name", "email", "phone", "city_state", "street_address",
           "postal_code", "linkedin_url", "portfolio_url"]
@@ -14,7 +15,12 @@ class Command(BaseCommand):
             parser.add_argument(f"--{field.replace('_', '-')}")
 
     def handle(self, *args, **options):
-        profile = ProfessionalProfile.objects.first() or ProfessionalProfile()
+        try:
+            owner = get_default_owner()
+        except NoDefaultOwner as error:
+            raise CommandError(str(error))
+
+        profile, _ = ProfessionalProfile.objects.get_or_create(owner=owner)
 
         for field in FIELDS:
             value = options.get(field)
@@ -24,7 +30,7 @@ class Command(BaseCommand):
         # The LinkedIn URL is already recorded as a ProfileLink; default to it
         # rather than making her type the same URL into a second place.
         if not profile.linkedin_url:
-            link = ProfileLink.objects.filter(platform__iexact="LinkedIn").first()
+            link = ProfileLink.objects.filter(owner=owner, platform__iexact="LinkedIn").first()
             if link:
                 profile.linkedin_url = link.url
 
