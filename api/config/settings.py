@@ -142,6 +142,12 @@ REST_FRAMEWORK = {
 # postings into `ingestion`.
 INGESTION_API_KEY = os.environ.get("INGESTION_API_KEY", "")
 
+# Shared secret a partner app (TransWell's Jobs tab) presents in the
+# X-Partner-Key header to provision an account here for one of its members.
+# It can create and delete partner accounts and nothing else — it reads no
+# one's data, so leaking it exposes no résumés.
+PARTNER_API_KEY = os.environ.get("PARTNER_API_KEY", "")
+
 # Required to read a finished Apify run's dataset. Apify's docs suggest default
 # datasets are public, but in practice an unauthenticated GET returns 403 — so
 # without this the webhook can't ingest anything.
