@@ -75,8 +75,21 @@ class ResumeUploadTests(TestCase):
         upload_file = SimpleUploadedFile("resume.exe", b"MZ" + b"x" * 100, content_type="application/octet-stream")
         response = self.upload(upload_file)
         self.assertEqual(response.status_code, 400)
-        self.assertIn("PDF and DOCX", str(response.json()))
+        self.assertIn("PDF, DOCX, TXT, Markdown and RTF", str(response.json()))
         self.assertEqual(ResumeVersion.objects.count(), 0)
+
+    def test_accepts_the_plain_text_formats_the_parser_can_read(self):
+        # Storage and reading share one list (see validators). A format the
+        # parser handles must not be refused at upload — that mismatch is what
+        # made TransWell's .txt uploads fail after they had already been saved.
+        for name, data in (
+            ("resume.txt", b"Peer support and intake experience"),
+            ("resume.md", b"# Resume\n\nPeer support"),
+            (b"resume.rtf".decode(), rb"{\rtf1\ansi Peer support}"),
+        ):
+            with self.subTest(name=name):
+                response = self.upload(SimpleUploadedFile(name, data))
+                self.assertEqual(response.status_code, 201, response.json())
 
     def test_a_renamed_file_with_a_pdf_extension_is_still_rejected(self):
         # The extension alone is exactly what a client-side check would trust.
