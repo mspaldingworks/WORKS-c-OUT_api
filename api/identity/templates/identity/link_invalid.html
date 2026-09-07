@@ -1,0 +1,12 @@
+{% extends "identity/base.html" %}
+{% block title %}Link expired — WORKS(c)OUT{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">That link doesn't work any more</h2>
+  <p>
+    Sign-in links work once and expire after {{ minutes }} minutes. This one
+    has been used already, or it's too old.
+  </p>
+  <p><a href="{% url 'account-sign-in' %}">Get a new link</a></p>
+</div>
+{% endblock %}

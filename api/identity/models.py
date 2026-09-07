@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from .validators import validate_resume_file
 
@@ -118,3 +121,37 @@ class ResumeVersion(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class MagicLinkToken(models.Model):
+    """A one-time sign-in link for an account with no usable password.
+
+    Accounts provisioned for a partner app's members (see `partner_views`) are
+    reached through that app's token. This is what makes them reachable
+    without it: the member asks for a link, clicks it, and gets a session
+    here — so the account is genuinely theirs rather than only nominally.
+
+    Only a hash of the token is stored, the same reasoning as a password: a
+    database copy must not hand someone a working sign-in link. The plaintext
+    exists once, in the email.
+    """
+
+    LIFETIME = timedelta(minutes=15)
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="magic_links",
+    )
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Magic link for {self.user}"
+
+    @property
+    def is_usable(self):
+        return self.used_at is None and timezone.now() < self.expires_at

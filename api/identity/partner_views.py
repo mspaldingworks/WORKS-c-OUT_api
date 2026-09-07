@@ -170,3 +170,38 @@ class PartnerAccountDetailView(APIView):
         logger.info("Deleting partner account %s", username)
         user.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PartnerSignInLinkView(APIView):
+    """POST /api/identity/partner-accounts/<partner>/<external_id>/sign-in-link/
+
+    Emails that member a one-time sign-in link, so the partner app can offer
+    "sign in here directly" without ever handling the link itself.
+
+    The address comes off the account, never from the request: a caller with
+    the provisioning key can ask for a link, but cannot say where it goes.
+    """
+
+    authentication_classes = [PartnerKeyOnly]
+    permission_classes = [AllowAny]
+
+    def post(self, request, partner, external_id):
+        if not _has_valid_partner_key(request):
+            return Response(
+                {"detail": "Invalid or missing partner key."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        from .magic_links import send_link
+
+        User = get_user_model()
+        user = User.objects.filter(
+            username=partner_username(partner.lower(), external_id),
+        ).first()
+        if user is None:
+            return Response(
+                {"detail": "No such account."}, status=status.HTTP_404_NOT_FOUND,
+            )
+
+        sent = send_link(user.email, user)
+        return Response({"sent": sent, "email": user.email})

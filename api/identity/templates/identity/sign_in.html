@@ -1,0 +1,23 @@
+{% extends "identity/base.html" %}
+{% block title %}Sign in — WORKS(c)OUT{% endblock %}
+{% block content %}
+<p class="muted">Job-search account</p>
+<div class="card">
+  <h2 style="margin-top:0">Sign in</h2>
+  <p>
+    Enter the email on your account and we'll send you a link. There's no
+    password to remember — the link signs you in and works once.
+  </p>
+  <form method="post">
+    {% csrf_token %}
+    <label for="email">Email address</label>
+    <input type="email" id="email" name="email" required autocomplete="email"
+           autocapitalize="none" spellcheck="false">
+    <p style="margin-top:12px"><button type="submit">Email me a link</button></p>
+  </form>
+</div>
+<p class="muted">
+  If you reached this from TransWell, use the same email address your TransWell
+  account uses.
+</p>
+{% endblock %}

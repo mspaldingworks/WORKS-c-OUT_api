@@ -1,0 +1,19 @@
+{% extends "identity/base.html" %}
+{% block title %}Check your email — WORKS(c)OUT{% endblock %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top:0">Check your email</h2>
+  {% comment %}
+  Worded so it says the same thing whether or not an account exists — whether
+  an address has an account here isn't something this page should reveal.
+  {% endcomment %}
+  <p>
+    If there's an account for that address, a sign-in link is on its way. It
+    works once and expires in {{ minutes }} minutes.
+  </p>
+  <p class="muted">
+    Nothing arrived? Check spam, then <a href="{% url 'account-sign-in' %}">ask
+    for another link</a>.
+  </p>
+</div>
+{% endblock %}

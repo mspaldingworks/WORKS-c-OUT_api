@@ -1,0 +1,64 @@
+{% extends "identity/base.html" %}
+{% block title %}Your account — WORKS(c)OUT{% endblock %}
+{% block content %}
+<p class="muted">Signed in as {{ user.email|default:user.username }}</p>
+
+{% if connected_partner %}
+<div class="notice">
+  This account was created for you when you connected the Jobs tab in
+  TransWell. Everything on it is yours — TransWell can act on it because you
+  connected it, and disconnecting there deletes it.
+</div>
+{% endif %}
+
+<h2>Documents</h2>
+{% if resumes %}
+  <div class="card">
+    {% for resume in resumes %}
+      <div class="row">
+        <div>
+          <div><strong>{{ resume.title }}</strong></div>
+          <div class="muted">
+            Uploaded {{ resume.created_at|date:"j M Y" }}
+            {% if resume.skill_count %} · {{ resume.skill_count }} skill{{ resume.skill_count|pluralize }} read from it{% endif %}
+          </div>
+        </div>
+        <form method="post" action="{% url 'account-delete-resume' resume.id %}">
+          {% csrf_token %}
+          <button class="danger" type="submit">Delete</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="muted">No documents on this account.</p>
+{% endif %}
+
+<h2>Skills</h2>
+{% if skills %}
+  <ul class="chips">
+    {% for skill in skills %}<li>{{ skill.name }}</li>{% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No skills saved on this account.</p>
+{% endif %}
+
+<h2>Your account</h2>
+<div class="card">
+  <p>
+    Deleting removes this account and everything on it — documents, skills and
+    profile — for good. If you connected from TransWell, its copy of your
+    documents is removed when you disconnect there.
+  </p>
+  <form method="post" action="{% url 'account-delete' %}"
+        onsubmit="return confirm('Delete this account and everything on it? This cannot be undone.');">
+    {% csrf_token %}
+    <button class="danger" type="submit">Delete my account</button>
+  </form>
+</div>
+
+<form method="post" action="{% url 'account-sign-out' %}">
+  {% csrf_token %}
+  <button class="secondary" type="submit">Sign out</button>
+</form>
+{% endblock %}

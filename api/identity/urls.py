@@ -1,7 +1,11 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from .partner_views import PartnerAccountDetailView, PartnerAccountView
+from .partner_views import (
+    PartnerAccountDetailView,
+    PartnerAccountView,
+    PartnerSignInLinkView,
+)
 from .review_views import DocumentReviewView
 from .views import ProfessionalProfileViewSet, ProfileLinkViewSet, ResumeVersionViewSet, SkillViewSet
 
@@ -22,5 +26,10 @@ urlpatterns = [
         "partner-accounts/<str:partner>/<str:external_id>/",
         PartnerAccountDetailView.as_view(),
         name="partner-account-detail",
+    ),
+    path(
+        "partner-accounts/<str:partner>/<str:external_id>/sign-in-link/",
+        PartnerSignInLinkView.as_view(),
+        name="partner-account-sign-in-link",
     ),
 ] + router.urls

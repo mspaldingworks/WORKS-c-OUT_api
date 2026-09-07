@@ -148,6 +148,31 @@ INGESTION_API_KEY = os.environ.get("INGESTION_API_KEY", "")
 # one's data, so leaking it exposes no résumés.
 PARTNER_API_KEY = os.environ.get("PARTNER_API_KEY", "")
 
+# Where a sign-in link points. Must be the public origin, not the loopback
+# address other services reach this by — the link is clicked in a mail client
+# on someone's phone.
+ACCOUNT_BASE_URL = os.environ.get("ACCOUNT_BASE_URL", "https://api.workscout.agency")
+
+# Sign-in links are the only email this service sends. Port 465 is implicit
+# SSL rather than STARTTLS, which is what EMAIL_USE_TLS would mean.
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "465") or 465)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "true").lower() == "true"
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "false").lower() == "true"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "")
+if not EMAIL_HOST:
+    # Without a host, send_mail would fail per-request. Failing into the
+    # console keeps a misconfigured deploy from looking like a broken feature.
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+# A magic link starts a session, so the cookie needs the usual protections.
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = not DEBUG
+
 # Required to read a finished Apify run's dataset. Apify's docs suggest default
 # datasets are public, but in practice an unauthenticated GET returns 403 — so
 # without this the webhook can't ingest anything.
