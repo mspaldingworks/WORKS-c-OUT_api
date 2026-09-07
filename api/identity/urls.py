@@ -1,5 +1,7 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .review_views import DocumentReviewView
 from .views import ProfessionalProfileViewSet, ProfileLinkViewSet, ResumeVersionViewSet, SkillViewSet
 
 router = DefaultRouter()
@@ -8,4 +10,8 @@ router.register("skills", SkillViewSet)
 router.register("links", ProfileLinkViewSet)
 router.register("resumes", ResumeVersionViewSet)
 
-urlpatterns = router.urls
+urlpatterns = [
+    # Stateless — parses and answers without creating a row. Listed ahead of
+    # the router so it can never be read as a detail route.
+    path("review-document/", DocumentReviewView.as_view(), name="review-document"),
+] + router.urls
