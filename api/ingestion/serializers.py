@@ -34,8 +34,18 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
             from identity.models import Skill
 
             request = self.context.get("request")
-            queryset = Skill.objects.filter(owner=request.user) if request else Skill.objects.none()
-            self._cached_skill_names = tuple(queryset.values_list("name", flat=True))
+            user = getattr(request, "user", None)
+            # No signed-in user means no skill list to compare against — the
+            # shared partner feed reads this serializer with only a key, so
+            # `request.user` is anonymous there. Comparing against nothing is
+            # the right answer for a feed that belongs to no one, and it also
+            # stops an anonymous request casting AnonymousUser to an owner id.
+            if user is None or not getattr(user, "is_authenticated", False):
+                self._cached_skill_names = ()
+            else:
+                self._cached_skill_names = tuple(
+                    Skill.objects.filter(owner=user).values_list("name", flat=True)
+                )
         return self._cached_skill_names
 
     def _ats(self, posting):

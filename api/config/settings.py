@@ -148,6 +148,12 @@ INGESTION_API_KEY = os.environ.get("INGESTION_API_KEY", "")
 # one's data, so leaking it exposes no résumés.
 PARTNER_API_KEY = os.environ.get("PARTNER_API_KEY", "")
 
+# Shared secret a partner app presents in the X-Feed-Key header to mirror the
+# job postings. Separate from PARTNER_API_KEY (which provisions accounts) and
+# from any user's token: this key reads postings and nothing else, so a
+# partner app no longer needs a person's own credential to mirror the feed.
+FEED_API_KEY = os.environ.get("FEED_API_KEY", "")
+
 # Where a sign-in link points. Must be the public origin, not the loopback
 # address other services reach this by — the link is clicked in a mail client
 # on someone's phone.
