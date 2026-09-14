@@ -220,6 +220,23 @@ GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 GOOGLE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_OAUTH_REFRESH_TOKEN = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN", "")
 
+# Where Google returns each user after they authorize their own Drive (see
+# identity/google_oauth.py). Must be registered as an authorized redirect URI on
+# the OAuth client. After storing the token the callback redirects to
+# GOOGLE_OAUTH_RETURN_URL (a custom app scheme) so the in-app auth session closes.
+GOOGLE_OAUTH_REDIRECT_URI = os.environ.get(
+    "GOOGLE_OAUTH_REDIRECT_URI", "https://api.workscout.agency/api/identity/drive/callback/"
+)
+GOOGLE_OAUTH_RETURN_URL = os.environ.get("GOOGLE_OAUTH_RETURN_URL", "workscout://drive-connected")
+
+# The per-user Drive flow needs a *Web* OAuth client (it does a browser redirect);
+# the owner's server credential above may be a Desktop client, whose refresh token
+# only works with that client. So the per-user client is kept separate — its
+# refresh tokens are minted and refreshed with THIS client. Falls back to
+# GOOGLE_OAUTH_* when unset (which won't actually complete the redirect flow).
+GOOGLE_DRIVE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "")
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "")
+
 # The suite is run inside the production container (there's no separate test
 # host), so a FileField save in a test would write real files into live media —
 # it has done exactly that. Redirect both the path and the storage backend, since
@@ -243,6 +260,8 @@ if "test" in sys.argv:
     GOOGLE_OAUTH_CLIENT_ID = ""
     GOOGLE_OAUTH_CLIENT_SECRET = ""
     GOOGLE_OAUTH_REFRESH_TOKEN = ""
+    GOOGLE_DRIVE_OAUTH_CLIENT_ID = ""
+    GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = ""
 
 LOGIN_URL = "/admin/login/"
 LOGIN_REDIRECT_URL = "/admin/"

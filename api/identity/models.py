@@ -207,6 +207,45 @@ class LLMCredential(models.Model):
         return f"{self.get_provider_display()} key for {self.owner}"
 
 
+class GoogleDriveConnection(models.Model):
+    """One account's own Google Drive, so their generated cover letters and
+    résumés are mirrored to *their* Drive instead of the server owner's.
+
+    The refresh token is stored encrypted (same Fernet helper as LLMCredential)
+    and never returned to the client. `enabled` is the Identity toggle; uploads
+    only happen when there's a token AND enabled is true (see
+    tracker.drive.resolve_drive). One row per account.
+    """
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="google_drive_connection")
+    refresh_token_encrypted = models.TextField(blank=True)
+    # The app-created Drive folder the PDFs go into, and the connected account,
+    # for display. drive.file scope means the app only ever sees files it made.
+    folder_id = models.CharField(max_length=200, blank=True)
+    account_email = models.CharField(max_length=254, blank=True)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def set_token(self, raw):
+        from .encryption import encrypt
+
+        self.refresh_token_encrypted = encrypt(raw)
+
+    def get_token(self):
+        from .encryption import decrypt
+
+        return decrypt(self.refresh_token_encrypted) if self.refresh_token_encrypted else ""
+
+    @property
+    def connected(self):
+        return bool(self.refresh_token_encrypted)
+
+    def __str__(self):
+        return f"Drive connection for {self.owner}"
+
+
 class MagicLinkToken(models.Model):
     """A one-time sign-in link for an account with no usable password.
 

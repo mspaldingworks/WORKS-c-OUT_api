@@ -8,6 +8,10 @@ from .partner_views import (
 )
 from .review_views import DocumentReviewView
 from .views import (
+    DriveCallbackView,
+    DriveConnectView,
+    DriveConnectionView,
+    DriveDisconnectView,
     JobFilterPreferencesView,
     LLMCredentialViewSet,
     ProfessionalProfileViewSet,
@@ -29,6 +33,12 @@ urlpatterns = [
     path("review-document/", DocumentReviewView.as_view(), name="review-document"),
     # The account's chosen set of visible Job-Feed filters (singleton per user).
     path("filter-preferences/", JobFilterPreferencesView.as_view(), name="filter-preferences"),
+    # Per-user Google Drive: status/toggle, the OAuth connect URL, Google's
+    # redirect target (AllowAny), and disconnect. Listed ahead of the router.
+    path("drive/", DriveConnectionView.as_view(), name="drive-connection"),
+    path("drive/connect/", DriveConnectView.as_view(), name="drive-connect"),
+    path("drive/callback/", DriveCallbackView.as_view(), name="drive-callback"),
+    path("drive/disconnect/", DriveDisconnectView.as_view(), name="drive-disconnect"),
     # Provisioning accounts for a partner app's members, so each member owns
     # their own rows here instead of sharing one service account.
     path("partner-accounts/", PartnerAccountView.as_view(), name="partner-accounts"),

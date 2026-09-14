@@ -1,14 +1,31 @@
+import logging
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import JobFilterPreferences, LLMCredential, ProfessionalProfile, ProfileLink, ResumeVersion, Skill
+from . import google_oauth
+from .models import (
+    GoogleDriveConnection,
+    JobFilterPreferences,
+    LLMCredential,
+    ProfessionalProfile,
+    ProfileLink,
+    ResumeVersion,
+    Skill,
+)
 from .llm import resolve_config
+
+logger = logging.getLogger(__name__)
 from .resume_parsing import ParsingUnavailable, parse_resume_text
 from .resume_text import TextExtractionFailed, extract_resume_text
 from .serializers import (
@@ -89,6 +106,110 @@ class JobFilterPreferencesView(RetrieveUpdateAPIView):
     def get_object(self):
         preferences, _ = JobFilterPreferences.objects.get_or_create(owner=self.request.user)
         return preferences
+
+
+def _drive_status(connection):
+    if connection is None:
+        return {"connected": False, "enabled": False, "account_email": "", "folder_id": ""}
+    return {
+        "connected": connection.connected,
+        "enabled": connection.enabled,
+        "account_email": connection.account_email,
+        "folder_id": connection.folder_id,
+    }
+
+
+class DriveConnectionView(APIView):
+    """GET this account's Google Drive status; PATCH the on/off toggle."""
+
+    def get(self, request):
+        connection = GoogleDriveConnection.objects.filter(owner=request.user).first()
+        return Response(_drive_status(connection))
+
+    def patch(self, request):
+        connection = GoogleDriveConnection.objects.filter(owner=request.user).first()
+        if connection is None or not connection.connected:
+            return Response({"detail": "Connect Google Drive before changing this."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if "enabled" in request.data:
+            connection.enabled = bool(request.data["enabled"])
+            connection.save(update_fields=["enabled", "updated_at"])
+        return Response(_drive_status(connection))
+
+
+class DriveConnectView(APIView):
+    """Return the Google consent URL the app opens to authorize their Drive."""
+
+    def get(self, request):
+        if not google_oauth.client_configured():
+            return Response({"detail": "Google Drive isn't configured on the server yet."},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"auth_url": google_oauth.auth_url(request.user.pk)})
+
+
+class DriveCallbackView(APIView):
+    """
+    Where Google redirects after consent. There's no app auth header on this
+    browser hop — the user is carried in the signed `state`. Always bounces back
+    to the app's return scheme so the in-app auth session closes either way.
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        if request.query_params.get("error"):
+            return self._return(ok=False, reason=request.query_params["error"])
+        try:
+            user_id = google_oauth.read_state(request.query_params.get("state"))
+            payload = google_oauth.exchange_code(request.query_params.get("code"))
+        except google_oauth.OAuthError as error:
+            return self._return(ok=False, reason=str(error))
+
+        user = get_user_model().objects.filter(pk=user_id).first()
+        if user is None:
+            return self._return(ok=False, reason="Account not found.")
+
+        refresh_token = payload["refresh_token"]
+        email = google_oauth.fetch_email(payload.get("access_token", ""))
+
+        # Create the app's folder in their Drive up front, so uploads have a home.
+        from tracker.drive import credentials_for, ensure_folder
+
+        folder_id = ""
+        try:
+            folder_id = ensure_folder(credentials_for(refresh_token))
+        except Exception:
+            logger.exception("Couldn't create the Drive folder for user %s", user_id)
+
+        connection, _ = GoogleDriveConnection.objects.get_or_create(owner=user)
+        connection.set_token(refresh_token)
+        connection.account_email = email
+        if folder_id:
+            connection.folder_id = folder_id
+        connection.enabled = True
+        connection.save()
+        return self._return(ok=True)
+
+    def _return(self, ok, reason=""):
+        from urllib.parse import quote
+
+        url = f"{settings.GOOGLE_OAUTH_RETURN_URL}?ok={'1' if ok else '0'}"
+        if reason:
+            url += f"&reason={quote(reason)}"
+        # Build the 302 by hand: HttpResponseRedirect rejects non-http(s) schemes
+        # (DisallowedRedirect → 400), and the return target is a custom app scheme
+        # (workscout://) the in-app auth session watches for.
+        response = HttpResponse(status=302)
+        response["Location"] = url
+        return response
+
+
+class DriveDisconnectView(APIView):
+    """Forget this account's Drive connection. Uploads stop until reconnected."""
+
+    def post(self, request):
+        GoogleDriveConnection.objects.filter(owner=request.user).delete()
+        return Response(_drive_status(None))
 
 
 class ProfileLinkViewSet(OwnerScopedViewSet):

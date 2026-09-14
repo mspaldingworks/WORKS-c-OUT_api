@@ -193,8 +193,8 @@ def build_documents(application):
     # — the PDFs are already saved and downloadable either way.
     from tracker.drive import upload_pdf_quietly
 
-    letter_url = upload_pdf_quietly(f"{slug}-cover-letter.pdf", letter_bytes)
-    resume_url = upload_pdf_quietly(f"{slug}-resume.pdf", resume_bytes)
+    letter_url = upload_pdf_quietly(f"{slug}-cover-letter.pdf", letter_bytes, owner=application.owner)
+    resume_url = upload_pdf_quietly(f"{slug}-resume.pdf", resume_bytes, owner=application.owner)
     if letter_url or resume_url:
         application.cover_letter_drive_url = letter_url
         application.resume_drive_url = resume_url
