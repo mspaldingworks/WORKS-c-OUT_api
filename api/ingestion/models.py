@@ -29,6 +29,16 @@ class IngestedPosting(models.Model):
     # computed on read so the ordering is cheap and the reasoning is auditable.
     score = models.PositiveSmallIntegerField(default=0, db_index=True)
     score_reasons = models.JSONField(default=list, blank=True)
+    # Filterable facets denormalized from raw_payload at ingest, so the feed can
+    # be narrowed in the database rather than by unpacking every payload on read.
+    # Salary is annualized (hourly rates × 2080, etc.) so one range compares
+    # across pay periods; null means the posting listed no pay. See salary.py.
+    salary_min_annual = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    salary_max_annual = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    is_remote = models.BooleanField(default=False, db_index=True)
+    # Normalized lowercase tokens ("full_time", "contract") for __contains
+    # filtering without reaching back into raw_payload.
+    employment_types = models.JSONField(default=list, blank=True)
     # Cached cover letter / tailored resume, so re-opening a posting doesn't
     # re-run (and re-pay for) generation.
     generated_materials = models.JSONField(default=dict, blank=True)

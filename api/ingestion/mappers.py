@@ -12,6 +12,7 @@ import json
 import re
 import urllib.request
 
+from .salary import parse_salary
 from .scoring import score_posting
 
 TITLE_KEYS = ("title", "positionName", "jobTitle", "position", "name")
@@ -40,6 +41,40 @@ def _first_string(item, keys):
                 if isinstance(nested, str) and nested.strip():
                     return nested.strip()
     return ""
+
+
+def _employment_types(item):
+    """`jobType` (string or list) -> normalized lowercase tokens, e.g.
+    "Full-time" -> "full_time". Deduped, order preserved."""
+    value = item.get("jobType")
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    tokens = []
+    for entry in value:
+        if not isinstance(entry, str):
+            continue
+        token = re.sub(r"\s+", "_", entry.strip().lower().replace("-", " ")).strip("_")
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def derive_facets(item):
+    """
+    The filterable facets pulled out of a scraped item and stored as columns:
+    annualized salary bounds, remote flag, normalized job-type tokens. Reused by
+    both ingest and the backfill so stored rows and new ones agree.
+    """
+    if not isinstance(item, dict):
+        return {"salary_min_annual": None, "salary_max_annual": None,
+                "is_remote": False, "employment_types": []}
+    return {
+        **parse_salary(item),
+        "is_remote": bool(item.get("isRemote")),
+        "employment_types": _employment_types(item),
+    }
 
 
 def normalize_item(item, source):
@@ -78,6 +113,7 @@ def normalize_item(item, source):
         "raw_payload": item,
         "score": score,
         "score_reasons": reasons,
+        **derive_facets(item),
     }
 
 

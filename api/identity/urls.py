@@ -7,7 +7,13 @@ from .partner_views import (
     PartnerSignInLinkView,
 )
 from .review_views import DocumentReviewView
-from .views import ProfessionalProfileViewSet, ProfileLinkViewSet, ResumeVersionViewSet, SkillViewSet
+from .views import (
+    JobFilterPreferencesView,
+    ProfessionalProfileViewSet,
+    ProfileLinkViewSet,
+    ResumeVersionViewSet,
+    SkillViewSet,
+)
 
 router = DefaultRouter()
 router.register("profile", ProfessionalProfileViewSet)
@@ -19,6 +25,8 @@ urlpatterns = [
     # Stateless — parses and answers without creating a row. Listed ahead of
     # the router so it can never be read as a detail route.
     path("review-document/", DocumentReviewView.as_view(), name="review-document"),
+    # The account's chosen set of visible Job-Feed filters (singleton per user).
+    path("filter-preferences/", JobFilterPreferencesView.as_view(), name="filter-preferences"),
     # Provisioning accounts for a partner app's members, so each member owns
     # their own rows here instead of sharing one service account.
     path("partner-accounts/", PartnerAccountView.as_view(), name="partner-accounts"),

@@ -2,6 +2,7 @@ import logging
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -19,6 +20,23 @@ from .serializers import IngestedPostingSerializer
 from .services import ingest_items, promote_posting_to_application
 
 logger = logging.getLogger(__name__)
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _as_int(value):
+    """Parse a query-param int, or None — garbage in a filter is ignored rather
+    than 500ing the whole feed."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_true(value, default=False):
+    if value is None:
+        return default
+    return str(value).strip().lower() in _TRUE_VALUES
 
 
 def _has_valid_ingestion_key(request):
@@ -39,12 +57,59 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset().filter(owner=self.request.user)
+        params = self.request.query_params
+
         # The Job Feed only ever wants new postings; filtering server-side keeps
         # it from pulling every posting ever scraped once the daily runs pile up.
-        status_filter = self.request.query_params.get("status")
+        status_filter = params.get("status")
         if status_filter:
             queryset = queryset.filter(status=status_filter)
+
+        queryset = self._filter_by_salary(queryset, params)
+
+        # Which of the optional facet filters are surfaced in the app is the
+        # user's choice (see identity.JobFilterPreferences); the server honors
+        # whichever params actually arrive.
+        if _is_true(params.get("remote")):
+            queryset = queryset.filter(is_remote=True)
+
+        job_types = [token for token in params.getlist("job_type") if token]
+        if job_types:
+            match = Q()
+            for token in job_types:
+                match |= Q(employment_types__contains=[token])
+            queryset = queryset.filter(match)
+
+        min_score = _as_int(params.get("min_score"))
+        if min_score is not None:
+            queryset = queryset.filter(score__gte=min_score)
+
         return queryset
+
+    @staticmethod
+    def _filter_by_salary(queryset, params):
+        """
+        Keep postings whose advertised annual band overlaps the requested one.
+
+        Postings with no listed pay have null bounds and are included by default
+        — a salary filter that silently dropped every unpriced job would gut the
+        feed — unless the caller passes include_unspecified_salary=0.
+        """
+        salary_min = _as_int(params.get("salary_min"))
+        salary_max = _as_int(params.get("salary_max"))
+        if salary_min is None and salary_max is None:
+            return queryset
+
+        overlaps = Q()
+        if salary_min is not None:
+            overlaps &= Q(salary_max_annual__gte=salary_min)
+        if salary_max is not None:
+            overlaps &= Q(salary_min_annual__lte=salary_max)
+
+        if _is_true(params.get("include_unspecified_salary"), default=True):
+            overlaps |= Q(salary_min_annual__isnull=True, salary_max_annual__isnull=True)
+
+        return queryset.filter(overlaps)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)

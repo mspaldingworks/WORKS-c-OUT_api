@@ -67,9 +67,12 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
         # `details` carries the readable parts instead.
         fields = ["id", "source", "title", "company_name", "url", "apply_url", "raw_payload",
                   "status", "score", "score_reasons", "created_at",
+                  "salary_min_annual", "salary_max_annual", "is_remote", "employment_types",
                   "platform", "requires_account", "sign_in_url", "details", "skills"]
         extra_kwargs = {"raw_payload": {"write_only": True}}
-        read_only_fields = ["status", "created_at", "score", "score_reasons"]
+        # Facets are derived from raw_payload at ingest, never set by the client.
+        read_only_fields = ["status", "created_at", "score", "score_reasons",
+                            "salary_min_annual", "salary_max_annual", "is_remote", "employment_types"]
         # Meta-level validators only; the url field also gets its own
         # UniqueValidator from the model constraint — cleared in __init__ below.
         validators = []

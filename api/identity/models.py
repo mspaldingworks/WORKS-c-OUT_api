@@ -123,6 +123,32 @@ class ResumeVersion(models.Model):
         return self.title
 
 
+class JobFilterPreferences(models.Model):
+    """Which optional Job-Feed filters this account wants surfaced.
+
+    The feed can offer several filters (salary, remote, job type, match score),
+    but showing all of them at once is noise — the point is to let each account
+    pick the few it cares about so the filter bar stays legible. One row per
+    account, created with defaults on first read (see the API view). Salary is on
+    by default because it's the filter the feature was built around.
+    """
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="job_filter_preferences")
+    salary = models.BooleanField(default=True)
+    remote = models.BooleanField(default=False)
+    job_type = models.BooleanField(default=False)
+    match_score = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "job filter preferences"
+        verbose_name_plural = "job filter preferences"
+
+    def __str__(self):
+        return f"Job filter preferences for {self.owner}"
+
+
 class MagicLinkToken(models.Model):
     """A one-time sign-in link for an account with no usable password.
 

@@ -1,7 +1,7 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import ProfessionalProfile, ProfileLink, ResumeVersion, Skill
+from .models import JobFilterPreferences, ProfessionalProfile, ProfileLink, ResumeVersion, Skill
 from .validators import MAX_RESUMES_PER_OWNER, validate_resume_file
 
 
@@ -19,6 +19,13 @@ class SkillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
         fields = ["id", "name", "category", "proficiency"]
+
+
+class JobFilterPreferencesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobFilterPreferences
+        fields = ["salary", "remote", "job_type", "match_score", "updated_at"]
+        read_only_fields = ["updated_at"]
 
 
 class ProfileLinkSerializer(serializers.ModelSerializer):

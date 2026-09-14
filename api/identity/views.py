@@ -4,12 +4,14 @@ from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
 
-from .models import ProfessionalProfile, ProfileLink, ResumeVersion, Skill
+from .models import JobFilterPreferences, ProfessionalProfile, ProfileLink, ResumeVersion, Skill
 from .resume_parsing import ParsingUnavailable, parse_resume_text
 from .resume_text import TextExtractionFailed, extract_resume_text
 from .serializers import (
+    JobFilterPreferencesSerializer,
     ProfessionalProfileSerializer,
     ProfileLinkSerializer,
     ResumeVersionSerializer,
@@ -44,6 +46,22 @@ class ProfessionalProfileViewSet(OwnerScopedViewSet):
 class SkillViewSet(OwnerScopedViewSet):
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
+
+
+class JobFilterPreferencesView(RetrieveUpdateAPIView):
+    """
+    The account's chosen set of visible Job-Feed filters.
+
+    GET auto-creates the row with defaults so the app always has something to
+    render on first launch; PATCH toggles individual filters. A singleton per
+    account, so there's no id in the URL — it's always "mine".
+    """
+
+    serializer_class = JobFilterPreferencesSerializer
+
+    def get_object(self):
+        preferences, _ = JobFilterPreferences.objects.get_or_create(owner=self.request.user)
+        return preferences
 
 
 class ProfileLinkViewSet(OwnerScopedViewSet):
