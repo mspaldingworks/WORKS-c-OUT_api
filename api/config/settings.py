@@ -188,6 +188,12 @@ APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "")
 # endpoint returns a clear "not configured" message rather than failing oddly.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+# Encrypts users' own LLM API keys at rest (identity.LLMCredential). Any string
+# works — it's run through a KDF to a valid Fernet key. Falls back to deriving
+# from SECRET_KEY so dev needs no extra config; set a dedicated value in prod so
+# rotating SECRET_KEY doesn't orphan stored keys.
+FIELD_ENCRYPTION_KEY = os.environ.get("FIELD_ENCRYPTION_KEY", "")
+
 # Which account unauthenticated machine callers (the ingestion webhook, Apify)
 # attach new rows to — see identity/owners.py. Falls back to "the only user
 # in the database" when unset, which is fine today (there is exactly one) but

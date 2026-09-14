@@ -171,10 +171,12 @@ class MaterialsEndpointTests(TestCase):
             self.assertEqual(client.return_value.messages.stream.call_count, 2)
 
     def test_missing_key_returns_503_with_a_usable_message(self):
+        # No server key and no personal provider configured → a message pointing
+        # the user at Identity, where they can now bring their own key.
         with override_settings(ANTHROPIC_API_KEY=""):
             response = self.client.post(self.url(), **self.auth)
         self.assertEqual(response.status_code, 503)
-        self.assertIn("Anthropic API key", response.json()["detail"])
+        self.assertIn("AI provider", response.json()["detail"])
 
     def test_requires_authentication(self):
         self.assertEqual(self.client.post(self.url()).status_code, 401)

@@ -14,9 +14,9 @@ import re
 
 from django.conf import settings
 
-logger = logging.getLogger(__name__)
+from identity import llm
 
-MODEL = "claude-opus-5"
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You write job application materials for one specific candidate.
 
@@ -85,14 +85,16 @@ def _posting_brief(posting):
     return "\n".join(lines)
 
 
-def generate_materials(posting, master_resume):
+def generate_materials(posting, master_resume, config=None):
     """
     Returns a dict with cover_letter, resume_summary, resume_bullets, gaps.
-    Raises GenerationUnavailable with a message suitable for showing the user.
+    `config` is the account's chosen LLM provider (identity.llm.resolve_config);
+    None uses the server's Anthropic key. Raises GenerationUnavailable with a
+    message suitable for showing the user.
     """
-    if not settings.ANTHROPIC_API_KEY:
+    if config is None and not settings.ANTHROPIC_API_KEY:
         raise GenerationUnavailable(
-            "No Anthropic API key configured on the server, so materials can't be generated yet."
+            "No AI provider is configured. Add your own API key in Identity → AI provider."
         )
     if not master_resume.strip():
         raise GenerationUnavailable(
@@ -105,36 +107,19 @@ def generate_materials(posting, master_resume):
             "This posting didn't include enough description text to tailor against."
         )
 
+    user_content = (
+        "CANDIDATE BACKGROUND (the only facts you may use):\n"
+        f"{master_resume}\n\n"
+        "----\n\n"
+        "JOB POSTING TO TAILOR FOR:\n"
+        f"{_posting_brief(posting)}"
+    )
     try:
-        import anthropic
+        text = llm.complete(SYSTEM_PROMPT, user_content, config=config, max_tokens=16000)
+    except llm.LLMUnavailable as error:
+        logger.exception("Generation failed for posting %s", posting.pk)
+        raise GenerationUnavailable(str(error)) from error
 
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        # Streamed, not a plain create(): thinking plus a 16k budget runs well past
-        # the SDK's non-streaming ceiling, and a long single response is exactly
-        # what trips request timeouts. get_final_message() still hands back one
-        # complete message, so nothing downstream has to care that it streamed.
-        with client.messages.stream(
-            model=MODEL,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
-            messages=[{
-                "role": "user",
-                "content": (
-                    "CANDIDATE BACKGROUND (the only facts you may use):\n"
-                    f"{master_resume}\n\n"
-                    "----\n\n"
-                    "JOB POSTING TO TAILOR FOR:\n"
-                    f"{_posting_brief(posting)}"
-                ),
-            }],
-        ) as stream:
-            response = stream.get_final_message()
-    except Exception as error:
-        logger.exception("Anthropic call failed for posting %s", posting.pk)
-        raise GenerationUnavailable(f"Couldn't reach the writing model: {error}") from error
-
-    text = "".join(block.text for block in response.content if block.type == "text")
     match = SECTION_PATTERN.search(text)
     if not match:
         # Don't throw the work away over a formatting miss — hand back what came

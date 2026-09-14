@@ -6,6 +6,8 @@ gunicorn==23.0.0
 whitenoise==6.8.2
 python-dotenv==1.0.1
 anthropic==1.2.0
+openai==1.40.0
+cryptography==42.0.5
 gspread==6.1.4
 reportlab==4.2.5
 pypdf==5.1.0

@@ -7,11 +7,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.response import Response
 
-from .models import JobFilterPreferences, ProfessionalProfile, ProfileLink, ResumeVersion, Skill
+from .models import JobFilterPreferences, LLMCredential, ProfessionalProfile, ProfileLink, ResumeVersion, Skill
+from .llm import resolve_config
 from .resume_parsing import ParsingUnavailable, parse_resume_text
 from .resume_text import TextExtractionFailed, extract_resume_text
 from .serializers import (
     JobFilterPreferencesSerializer,
+    LLMCredentialSerializer,
     ProfessionalProfileSerializer,
     ProfileLinkSerializer,
     ResumeVersionSerializer,
@@ -46,6 +48,31 @@ class ProfessionalProfileViewSet(OwnerScopedViewSet):
 class SkillViewSet(OwnerScopedViewSet):
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
+
+
+class LLMCredentialViewSet(OwnerScopedViewSet):
+    """CRUD for an account's own AI provider keys. The key is write-only and
+    only ever comes back masked (see the serializer)."""
+
+    queryset = LLMCredential.objects.all()
+    serializer_class = LLMCredentialSerializer
+
+    def destroy(self, request, *args, **kwargs):
+        # Return the deleted row (200) instead of an empty 204, so the app's
+        # decoder always has a body to read.
+        instance = self.get_object()
+        data = self.get_serializer(instance).data
+        instance.delete()
+        return Response(data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        """Make this the provider actually used, clearing any other active one."""
+        cred = self.get_object()
+        LLMCredential.objects.filter(owner=request.user).exclude(pk=cred.pk).update(is_active=False)
+        cred.is_active = True
+        cred.save(update_fields=["is_active"])
+        return Response(self.get_serializer(cred).data)
 
 
 class JobFilterPreferencesView(RetrieveUpdateAPIView):
@@ -118,7 +145,7 @@ class ResumeVersionViewSet(OwnerScopedViewSet):
             return Response({"detail": str(error)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
         try:
-            parsed = parse_resume_text(text)
+            parsed = parse_resume_text(text, config=resolve_config(request.user))
         except ParsingUnavailable as error:
             return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 

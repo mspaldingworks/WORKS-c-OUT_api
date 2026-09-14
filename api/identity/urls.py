@@ -9,6 +9,7 @@ from .partner_views import (
 from .review_views import DocumentReviewView
 from .views import (
     JobFilterPreferencesView,
+    LLMCredentialViewSet,
     ProfessionalProfileViewSet,
     ProfileLinkViewSet,
     ResumeVersionViewSet,
@@ -20,6 +21,7 @@ router.register("profile", ProfessionalProfileViewSet)
 router.register("skills", SkillViewSet)
 router.register("links", ProfileLinkViewSet)
 router.register("resumes", ResumeVersionViewSet)
+router.register("ai-credentials", LLMCredentialViewSet)
 
 urlpatterns = [
     # Stateless — parses and answers without creating a row. Listed ahead of

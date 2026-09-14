@@ -149,6 +149,64 @@ class JobFilterPreferences(models.Model):
         return f"Job filter preferences for {self.owner}"
 
 
+class LLMCredential(models.Model):
+    """One account's own API key for an AI provider, so their generation and
+    résumé parsing run on their subscription rather than the server's.
+
+    The key is stored encrypted (see encryption.py) and never returned to the
+    client — only a masked hint. One row per provider per account; the single
+    `is_active` row is the one actually used, falling back to the server's
+    Anthropic key when there's no active row (see llm.resolve_config).
+    """
+
+    class Provider(models.TextChoices):
+        ANTHROPIC = "anthropic", "Claude (Anthropic)"
+        OPENAI = "openai", "OpenAI"
+        GEMINI = "gemini", "Google Gemini"
+        DEEPSEEK = "deepseek", "DeepSeek"
+        # Any OpenAI-compatible endpoint (OpenRouter, Groq, local, …): the user
+        # supplies base_url + model themselves.
+        CUSTOM = "custom", "Custom (OpenAI-compatible)"
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="llm_credentials")
+    provider = models.CharField(max_length=20, choices=Provider.choices)
+    api_key_encrypted = models.TextField()
+    # Optional overrides; blank means "use the provider default" (see llm.PROVIDERS).
+    model = models.CharField(max_length=100, blank=True)
+    base_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["provider"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "provider"], name="unique_llm_provider_per_owner"),
+        ]
+
+    def set_key(self, raw):
+        from .encryption import encrypt
+
+        self.api_key_encrypted = encrypt(raw)
+
+    def get_key(self):
+        from .encryption import decrypt
+
+        return decrypt(self.api_key_encrypted)
+
+    @property
+    def masked_key(self):
+        """A hint only — never the key. Shows the last 4 chars, e.g. '…4a9f'."""
+        try:
+            raw = self.get_key()
+        except Exception:
+            return ""
+        return f"…{raw[-4:]}" if len(raw) > 4 else "…"
+
+    def __str__(self):
+        return f"{self.get_provider_display()} key for {self.owner}"
+
+
 class MagicLinkToken(models.Model):
     """A one-time sign-in link for an account with no usable password.
 

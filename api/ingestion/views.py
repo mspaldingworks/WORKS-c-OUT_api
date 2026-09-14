@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from tracker.serializers import ApplicationSerializer
 
+from identity.llm import resolve_config
 from identity.models import ProfessionalProfile
 from identity.owners import NoDefaultOwner, get_default_owner
 
@@ -126,7 +127,11 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
 
         profile = ProfessionalProfile.objects.filter(owner=request.user).first()
         try:
-            materials = generate_materials(posting, profile.master_resume if profile else "")
+            materials = generate_materials(
+                posting,
+                profile.master_resume if profile else "",
+                config=resolve_config(request.user),
+            )
         except GenerationUnavailable as error:
             return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 

@@ -26,6 +26,7 @@ from .document_intake import (
     DocumentUnreadable,
     extract_document_text,
 )
+from .llm import resolve_config
 from .resume_parsing import ParsingUnavailable, parse_resume_text
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ class DocumentReviewView(APIView):
                 )
 
         try:
-            parsed = parse_resume_text(text)
+            parsed = parse_resume_text(text, config=resolve_config(request.user))
         except ParsingUnavailable as error:
             # 503 rather than 500: nothing about the document is wrong, the
             # parser just isn't answering, and the caller should retry.

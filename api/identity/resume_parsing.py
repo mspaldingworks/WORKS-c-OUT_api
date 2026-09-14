@@ -20,9 +20,9 @@ import logging
 
 from django.conf import settings
 
-logger = logging.getLogger(__name__)
+from . import llm
 
-MODEL = "claude-opus-5"
+logger = logging.getLogger(__name__)
 
 VALID_PROFICIENCIES = {"learning", "competent", "strong", "expert"}
 MAX_SKILLS = 40
@@ -65,40 +65,32 @@ class ParsingUnavailable(Exception):
     """Raised when a résumé can't be parsed — missing key, thin text, or an API failure."""
 
 
-def parse_resume_text(text):
+def parse_resume_text(text, config=None):
     """
     Returns a dict with skills (list of {name, category, proficiency}),
-    headline, email, phone, linkedin_url, unparsed. Raises ParsingUnavailable
-    with a message suitable for showing the user.
+    headline, email, phone, linkedin_url, unparsed. `config` is the account's
+    chosen LLM provider (identity.llm.resolve_config); None uses the server's
+    Anthropic key. Raises ParsingUnavailable with a message for the user.
     """
-    if not settings.ANTHROPIC_API_KEY:
+    if config is None and not settings.ANTHROPIC_API_KEY:
         raise ParsingUnavailable(
-            "No Anthropic API key configured on the server, so résumés can't be parsed yet."
+            "No AI provider is configured. Add your own API key in Identity → AI provider."
         )
     if len(text.strip()) < 50:
         raise ParsingUnavailable("This résumé didn't have enough readable text to parse.")
 
     try:
-        import anthropic
-
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-        # Streamed for the same reason as ingestion/generation.py: thinking plus
-        # a multi-thousand-token response can run past the SDK's non-streaming
-        # ceiling and is exactly what trips request timeouts.
-        with client.messages.stream(
-            model=MODEL,
+        raw = llm.complete(
+            SYSTEM_PROMPT,
+            f"RÉSUMÉ TEXT:\n\n{text[:20000]}",
+            config=config,
             max_tokens=8000,
-            thinking={"type": "adaptive"},
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"RÉSUMÉ TEXT:\n\n{text[:20000]}"}],
-        ) as stream:
-            response = stream.get_final_message()
-    except Exception as error:
-        logger.exception("Anthropic call failed while parsing a résumé")
-        raise ParsingUnavailable(f"Couldn't reach the parsing model: {error}") from error
+        )
+    except llm.LLMUnavailable as error:
+        logger.exception("Résumé parse failed")
+        raise ParsingUnavailable(str(error)) from error
 
-    raw = "".join(block.text for block in response.content if block.type == "text").strip()
-    return _parse_json_leniently(raw)
+    return _parse_json_leniently(raw.strip())
 
 
 def _parse_json_leniently(raw):
