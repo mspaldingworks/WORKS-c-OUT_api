@@ -148,6 +148,17 @@ class FeedToolsTests(TestCase):
         self.assertEqual(self._titles("?within_miles=100&workplace=onsite&workplace=hybrid&sort=pay"),
                          ["Far", "Near"])
 
+    def test_one_malformed_row_does_not_fail_the_whole_feed(self):
+        # Rows like these can already be stored; the feed has to read past them.
+        for index, payload in enumerate(("weird", ["a"], 7, {"requirements": 7})):
+            IngestedPosting.objects.create(
+                owner=self.user, source="s", title=f"Odd {index}",
+                url=f"https://jobs.test/odd-{index}", raw_payload=payload)
+        titles = self._titles()
+        self.assertEqual(len(titles), 8)
+        self.assertIn("Near", titles)
+        self._titles("?q=grant&sort=newest")
+
     def test_detail_routes_still_work_with_annotations(self):
         self._set_home()
         url = reverse("ingestedposting-dismiss", args=[self.near.pk])

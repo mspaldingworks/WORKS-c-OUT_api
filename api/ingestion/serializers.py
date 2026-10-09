@@ -88,6 +88,13 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
         # UniqueValidator from the model constraint — cleared in __init__ below.
         validators = []
 
+    def validate_raw_payload(self, value):
+        # Every reader treats this as an object. The Apify mapper only ever
+        # stores one; this is the same guarantee for postings pushed to /ingest/.
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("raw_payload must be a JSON object.")
+        return value
+
     def create(self, validated_data):
         # Postings pushed straight to /ingest/ skip the Apify mapper, so derive
         # the filter facets here too — otherwise they'd be invisible to every

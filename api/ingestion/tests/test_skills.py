@@ -81,6 +81,22 @@ class AliasBreadthTests(TestCase):
                                    "Donor Relations", "Public Programming", "Campaign Strategy"))
                 self.assertIn(expected, result["matched"])
 
+    def test_a_payload_that_is_not_an_object_matches_nothing(self):
+        row = posting("placeholder")
+        for payload in ("fundraising", ["fundraising"], 7):
+            with self.subTest(payload=payload):
+                row.raw_payload = payload
+                self.assertEqual(summarise(row, HERS), {"matched": [], "missing": []})
+
+    def test_requirements_need_not_be_a_list(self):
+        row = posting("Lead our annual campaign.")
+        row.raw_payload["requirements"] = "Grant writing experience"
+        self.assertIn("Grant Writing", summarise(row, HERS)["matched"])
+        for odd in (7, True, {"a": 1}):
+            with self.subTest(requirements=odd):
+                row.raw_payload["requirements"] = odd
+                self.assertIsInstance(summarise(row, HERS)["matched"], list)
+
     def test_widening_did_not_break_the_boundary_guard(self):
         result = summarise(posting(
             "A digital-first team. Success requires initiative. We use MySQL."), HERS)

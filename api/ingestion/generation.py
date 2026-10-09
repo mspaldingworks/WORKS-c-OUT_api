@@ -16,6 +16,8 @@ from django.conf import settings
 
 from identity import llm
 
+from .details import payload_of
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You write job application materials for one specific candidate.
@@ -69,15 +71,17 @@ def _strip_marker(line):
 
 
 def _posting_brief(posting):
-    payload = posting.raw_payload or {}
-    salary = payload.get("salary") or {}
+    payload = payload_of(posting)
+    # A dict from most boards; some send the pay as one line of text.
+    salary = payload.get("salary")
+    salary_text = salary.get("salaryText") if isinstance(salary, dict) else salary
     location = payload.get("location") or {}
     lines = [
         f"Job title: {posting.title}",
         f"Employer: {posting.company_name or 'Not stated'}",
         f"Location: {location.get('formattedAddressShort') if isinstance(location, dict) else location or 'Not stated'}",
         f"Remote: {payload.get('isRemote')}",
-        f"Salary: {salary.get('salaryText') or 'Not stated'}",
+        f"Salary: {salary_text or 'Not stated'}",
         "",
         "Full posting text:",
         str(payload.get("descriptionText") or "")[:14000],
@@ -101,7 +105,7 @@ def generate_materials(posting, master_resume, config=None):
             "No master resume saved in Identity — add one before generating materials."
         )
 
-    description = str((posting.raw_payload or {}).get("descriptionText") or "")
+    description = str(payload_of(posting).get("descriptionText") or "")
     if len(description) < 200:
         raise GenerationUnavailable(
             "This posting didn't include enough description text to tailor against."

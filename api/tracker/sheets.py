@@ -15,6 +15,8 @@ import logging
 
 from django.conf import settings
 
+from ingestion.details import payload_of
+
 logger = logging.getLogger(__name__)
 
 WORKSHEET_TITLE = "Applications"
@@ -55,7 +57,7 @@ def _row_for(application):
     """One sheet row per Application, pulling materials off the source posting."""
     posting = getattr(application, "source_posting", None)
     materials = (posting.generated_materials if posting else {}) or {}
-    payload = (posting.raw_payload if posting else {}) or {}
+    payload = payload_of(posting)
 
     location = payload.get("location")
     if isinstance(location, dict):

@@ -1,5 +1,6 @@
 from django.core.management.base import BaseCommand
 
+from ingestion.details import payload_of
 from ingestion.models import IngestedPosting
 from ingestion.scoring import score_posting
 
@@ -12,7 +13,7 @@ class Command(BaseCommand):
         for posting in postings:
             posting.score, posting.score_reasons = score_posting(posting.raw_payload)
             if not posting.apply_url:
-                apply_url = (posting.raw_payload or {}).get("applyUrl") or ""
+                apply_url = payload_of(posting).get("applyUrl") or ""
                 posting.apply_url = apply_url if len(apply_url) <= 1000 else ""
         IngestedPosting.objects.bulk_update(postings, ["score", "score_reasons", "apply_url"], batch_size=200)
         self.stdout.write(self.style.SUCCESS(f"Rescored {len(postings)} postings."))
