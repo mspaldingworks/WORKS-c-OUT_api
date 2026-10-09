@@ -14,6 +14,8 @@ fit is worse than one that says nothing.
 import re
 from functools import lru_cache
 
+from .details import payload_of
+
 # Extra search terms per skill, where the stored name isn't how a posting
 # phrases it. The skill's own name is always searched too.
 ALIASES = {
@@ -108,11 +110,17 @@ def summarise(posting, skill_names):
     `skill_names` is her stored skill list, passed in so the caller can read it
     once for a whole feed rather than per posting.
     """
-    payload = posting.raw_payload or {}
+    payload = payload_of(posting)
+    # Usually a list, sometimes one string; anything else isn't readable text.
+    requirements = payload.get("requirements")
+    if isinstance(requirements, str):
+        requirements = [requirements]
+    elif not isinstance(requirements, list):
+        requirements = []
     text = " ".join([
         str(payload.get("descriptionText") or "")[:20000],
         str(payload.get("title") or ""),
-        " ".join(str(item) for item in (payload.get("requirements") or []) if item),
+        " ".join(str(item) for item in requirements if item),
     ])
     if not text.strip():
         return {"matched": [], "missing": []}

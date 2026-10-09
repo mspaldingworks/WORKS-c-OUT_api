@@ -56,6 +56,21 @@ class IngestViewTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(IngestedPosting.objects.count(), 2)
 
+    def test_rejects_a_payload_that_is_not_an_object(self):
+        # Every reader treats raw_payload as an object; a string or a list here
+        # used to be stored and then fail the whole feed on read.
+        for payload in ("weird", ["a"], 7):
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    self.url,
+                    data={"source": "email", "title": "Analyst", "raw_payload": payload},
+                    content_type="application/json",
+                    HTTP_X_INGESTION_KEY=TEST_KEY,
+                )
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn("raw_payload", response.json())
+        self.assertEqual(IngestedPosting.objects.count(), 0)
+
     def test_url_stays_optional(self):
         # Email-sourced postings have no URL. The (source, url) unique constraint
         # must not make DRF demand one.

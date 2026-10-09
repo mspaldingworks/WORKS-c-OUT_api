@@ -6,7 +6,7 @@ from django.urls import reverse
 from rest_framework.authtoken.models import Token
 
 from identity.models import ProfessionalProfile
-from ingestion.generation import GenerationUnavailable, generate_materials
+from ingestion.generation import GenerationUnavailable, _posting_brief, generate_materials
 from ingestion.models import IngestedPosting
 
 WELL_FORMED = """===COVER_LETTER===
@@ -60,6 +60,20 @@ def make_posting(description="x" * 500, url="https://example.test/job/1", owner=
         url=url,
         raw_payload={"descriptionText": description, "salary": {}, "location": {}},
     )
+
+
+class PostingBriefTests(TestCase):
+    def test_a_salary_given_as_plain_text_is_passed_through(self):
+        posting = make_posting()
+        posting.raw_payload["salary"] = "negotiable"
+        self.assertIn("Salary: negotiable", _posting_brief(posting))
+
+    def test_a_payload_that_is_not_an_object_still_makes_a_brief(self):
+        posting = make_posting()
+        posting.raw_payload = "weird"
+        brief = _posting_brief(posting)
+        self.assertIn("Job title: Digital Fundraising Strategy Lead", brief)
+        self.assertIn("Salary: Not stated", brief)
 
 
 @override_settings(ANTHROPIC_API_KEY="test-key")

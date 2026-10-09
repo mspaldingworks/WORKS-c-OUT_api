@@ -49,6 +49,15 @@ class DetailsTests(SimpleTestCase):
                 self.assertIsInstance(details["description"], str)
                 self.assertIsInstance(details["is_remote"], bool)
 
+    def test_a_payload_that_is_not_an_object_reads_as_empty(self):
+        # /ingest/ used to take any JSON, and one such row took the feed down.
+        for payload in ("weird", ["a", "b"], 7, True, None):
+            with self.subTest(payload=payload):
+                details = describe(Posting(payload))
+                self.assertEqual(details["description"], "")
+                self.assertEqual(details["job_types"], [])
+                self.assertFalse(details["is_remote"])
+
     def test_a_single_job_type_string_becomes_a_list(self):
         self.assertEqual(describe(Posting({"jobType": "Full-time"}))["job_types"], ["Full-time"])
 

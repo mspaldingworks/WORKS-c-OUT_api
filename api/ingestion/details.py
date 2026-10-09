@@ -9,6 +9,19 @@ judged inside the app rather than by opening the employer's page.
 """
 
 
+def payload_of(posting):
+    """
+    A posting's raw_payload as a dict, whatever was actually stored.
+
+    Scraped items are always objects, but the column takes any JSON, and a
+    single row holding a string or a list used to fail the whole feed on read.
+    Everything that reads a payload goes through here, so such a row just reads
+    as empty.
+    """
+    payload = getattr(posting, "raw_payload", None)
+    return payload if isinstance(payload, dict) else {}
+
+
 def _text(value):
     return str(value).strip() if value not in (None, "") else ""
 
@@ -62,7 +75,7 @@ def _rating(payload):
 
 def describe(posting):
     """Everything the expanded card in the feed shows."""
-    payload = posting.raw_payload or {}
+    payload = payload_of(posting)
     return {
         # The full text, not a preview: the point is not having to leave the app,
         # and it's still smaller than the raw payload this replaced.
