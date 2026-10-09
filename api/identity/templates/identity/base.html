@@ -3,6 +3,7 @@ The member-facing surface. Deliberately plain, server-rendered and
 dependency-free: it exists so an account provisioned for a partner app's
 member is reachable without that app, not to be a second product.
 {% endcomment %}
+{% load static %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -10,21 +11,33 @@ member is reachable without that app, not to be a second product.
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>{% block title %}WORKS(c)OUT{% endblock %}</title>
+<link rel="icon" href="{% static 'identity/brand/favicon.ico' %}" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="{% static 'identity/brand/favicon-32.png' %}">
+<link rel="icon" type="image/png" sizes="16x16" href="{% static 'identity/brand/favicon-16.png' %}">
+<link rel="apple-touch-icon" href="{% static 'identity/brand/apple-touch-icon.png' %}">
+<meta name="theme-color" content="#1450c0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a1f44" media="(prefers-color-scheme: dark)">
 <style>
+  /* The app's palette, from the logo: a violet → cobalt → teal → mint sweep
+     with navy ink. Text colours are deepened (light) or brightened (dark) so
+     they stay readable; the raw logo colours appear only in the gradient. */
   :root {
     color-scheme: light dark;
-    --bg: #fcfaff; --fg: #2f2c33; --muted: #5c5866;
-    --card: #ffffff; --line: #d8cce8; --accent: #3d1d55; --warn: #dd5888;
+    --bg: #f5f8ff; --fg: #0a1f44; --muted: #4a5878;
+    --card: #ffffff; --line: #d3ddf0; --accent: #1450c0; --on-accent: #ffffff;
+    --warn: #c62f4b;
+    --brand-gradient: linear-gradient(45deg, #7b2fc2, #1450c0 38%, #0e9dbf 72%, #56e885);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #17151c; --fg: #f2eff7; --muted: #a9a3b5;
-      --card: #221f29; --line: #3a3444; --accent: #ac8af8; --warn: #ff9dc0;
+      --bg: #08142e; --fg: #f4f7ff; --muted: #a3b1cc;
+      --card: #102248; --line: #24396a; --accent: #4da8ff; --on-accent: #0a1f44;
+      --warn: #ff8a9b;
     }
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--fg);
+    margin: 0; padding: 0 16px 64px; background: var(--bg); color: var(--fg);
     font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
   main { max-width: 640px; margin: 0 auto; }
@@ -50,7 +63,7 @@ member is reachable without that app, not to be a second product.
   }
   button {
     font: inherit; padding: 10px 16px; border-radius: 8px; cursor: pointer;
-    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent);
   }
   button.secondary { background: transparent; color: var(--accent); }
   button.danger { background: transparent; border-color: var(--warn); color: var(--warn); }
@@ -58,11 +71,26 @@ member is reachable without that app, not to be a second product.
   .row + .row { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
   a { color: var(--accent); }
   .notice { border-left: 3px solid var(--accent); padding-left: 12px; margin: 14px 0; }
+  .brand-rule { height: 4px; margin: 0 -16px; background: var(--brand-gradient); }
+  .brand {
+    display: flex; align-items: center; gap: 10px; margin: 22px 0 18px;
+    text-decoration: none;
+  }
+  .brand img { display: block; }
+  .brand .mark { width: 40px; height: 40px; }
+  .brand .wordmark { height: 26px; width: auto; }
 </style>
 </head>
 <body>
+<div class="brand-rule" aria-hidden="true"></div>
 <main>
-  <h1>WORKS(c)OUT</h1>
+  <h1 class="brand">
+    <img class="mark" src="{% static 'identity/brand/mark.png' %}" alt="" width="40" height="40">
+    <picture>
+      <source srcset="{% static 'identity/brand/wordmark-dark.png' %}" media="(prefers-color-scheme: dark)">
+      <img class="wordmark" src="{% static 'identity/brand/wordmark.png' %}" alt="WORKS(c)OUT" width="159" height="26">
+    </picture>
+  </h1>
   {% if messages %}
     {% for message in messages %}<div class="notice">{{ message }}</div>{% endfor %}
   {% endif %}
