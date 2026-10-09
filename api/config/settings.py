@@ -249,6 +249,10 @@ if "test" in sys.argv:
             "BACKEND": "django.core.files.storage.FileSystemStorage",
             "OPTIONS": {"location": MEDIA_ROOT},
         },
+        # The member pages link their favicon and logo with {% static %}; the
+        # manifest backend would fail those lookups wherever collectstatic
+        # hasn't run, which says nothing about the code under test.
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
     # Blank every outbound credential too. Redirecting local storage isn't
     # enough: build_documents also uploads to Drive, and the suite duly wrote
