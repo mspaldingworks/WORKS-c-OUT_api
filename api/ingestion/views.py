@@ -1,8 +1,10 @@
+import datetime
 import logging
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Case, F, Q, Value, When
+from django.db.models.functions import Coalesce, Lower, TruncDate
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,12 +13,15 @@ from rest_framework.views import APIView
 from tracker.serializers import ApplicationSerializer
 
 from identity.llm import resolve_config
-from identity.models import ProfessionalProfile
+from identity.models import JobFilterPreferences, ProfessionalProfile
 from identity.owners import NoDefaultOwner, get_default_owner
 
+from .ats import ACCOUNT_GATED_HOSTS
 from .generation import GenerationUnavailable, generate_materials
+from .geo import miles_from
 from .mappers import fetch_dataset_items
 from .models import IngestedPosting
+from .placement import HYBRID, ONSITE, REMOTE
 from .serializers import IngestedPostingSerializer
 from .services import ingest_items, promote_posting_to_application
 
@@ -30,6 +35,13 @@ def _as_int(value):
     than 500ing the whole feed."""
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_float(value):
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return None
 
@@ -71,8 +83,17 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
         # Which of the optional facet filters are surfaced in the app is the
         # user's choice (see identity.JobFilterPreferences); the server honors
         # whichever params actually arrive.
+        workplaces = {token for token in params.getlist("workplace") if token in {REMOTE, HYBRID, ONSITE}}
         if _is_true(params.get("remote")):
-            queryset = queryset.filter(is_remote=True)
+            # The original remote-only toggle, kept for older clients.
+            workplaces.add(REMOTE)
+        if workplaces:
+            match = Q(work_arrangement__in=workplaces)
+            if REMOTE in workplaces:
+                # is_remote and work_arrangement agree for anything ingested or
+                # backfilled; honoring both keeps a row set by hand findable.
+                match |= Q(is_remote=True)
+            queryset = queryset.filter(match)
 
         job_types = [token for token in params.getlist("job_type") if token]
         if job_types:
@@ -85,7 +106,124 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
         if min_score is not None:
             queryset = queryset.filter(score__gte=min_score)
 
+        queryset = self._filter_by_search(queryset, params.get("q", ""))
+        queryset = self._filter_by_posted_within(queryset, params)
+
+        if _is_true(params.get("no_account")):
+            queryset = queryset.exclude(self._account_gated())
+
+        queryset = self._with_commute(queryset, params)
+        return self._sorted(queryset, params.get("sort"))
+
+    def _home(self, params):
+        """
+        Where distances are measured from: explicit near_lat/near_lng on the
+        request, else the home saved in her filter preferences, else nowhere.
+        """
+        lat, lng = _as_float(params.get("near_lat")), _as_float(params.get("near_lng"))
+        if lat is not None and lng is not None and -90 <= lat <= 90 and -180 <= lng <= 180:
+            return lat, lng
+        if not hasattr(self, "_preferences"):
+            self._preferences = JobFilterPreferences.objects.filter(owner=self.request.user).first()
+        return self._preferences.home if self._preferences else None
+
+    def _with_commute(self, queryset, params):
+        """
+        Annotate commute_miles — straight-line miles from home — and apply the
+        within_miles radius.
+
+        A fully remote job has no commute, so its distance is null rather than
+        however far away the employer's office happens to be. The radius keeps
+        remote jobs by default (they're within reach of anywhere) unless the
+        caller passes include_remote=0; a posting with no known location can't
+        be shown to be within range and is left out.
+        """
+        home = self._home(params)
+        if home is None:
+            return queryset
+
+        queryset = queryset.annotate(
+            commute_miles=Case(
+                When(work_arrangement=REMOTE, then=Value(None)),
+                When(latitude__isnull=True, then=Value(None)),
+                When(longitude__isnull=True, then=Value(None)),
+                default=miles_from(*home),
+            )
+        )
+
+        radius = _as_float(params.get("within_miles"))
+        if radius is not None and radius > 0:
+            in_range = Q(commute_miles__lte=radius)
+            if _is_true(params.get("include_remote"), default=True):
+                in_range |= Q(work_arrangement=REMOTE)
+            queryset = queryset.filter(in_range)
         return queryset
+
+    @staticmethod
+    def _filter_by_search(queryset, query):
+        """
+        Every word has to appear somewhere in the title, company or description —
+        "grant writer louisville" narrows, rather than widens, as she types.
+        """
+        for term in query.split()[:8]:
+            queryset = queryset.filter(
+                Q(title__icontains=term)
+                | Q(company_name__icontains=term)
+                | Q(raw_payload__descriptionText__icontains=term)
+            )
+        return queryset
+
+    @staticmethod
+    def _filter_by_posted_within(queryset, params):
+        """
+        Listed in the last N days. The employer's own listing date is used where
+        the board gave one; otherwise the day it was scraped, which is the
+        latest it can have been listed.
+        """
+        days = _as_int(params.get("posted_within"))
+        if days is None or days < 0:
+            return queryset
+        since = datetime.date.today() - datetime.timedelta(days=days)
+        return queryset.annotate(
+            listed_on=Coalesce("posted_at", TruncDate("created_at"))
+        ).filter(listed_on__gte=since)
+
+    @staticmethod
+    def _account_gated():
+        """
+        Postings whose portal wants an account before it shows the form — the
+        same hosts ats.describe() flags, matched on the link Apply would use.
+        """
+        gated = Q()
+        for host in ACCOUNT_GATED_HOSTS:
+            gated |= Q(apply_url__icontains=host) | Q(apply_url="", url__icontains=host)
+        return gated
+
+    @staticmethod
+    def _sorted(queryset, sort):
+        """
+        best (default): fit score, newest first among ties.
+        newest: employer's listing date, falling back to when it was scraped.
+        pay: highest advertised top of band; unpriced jobs last.
+        closest: shortest commute, remote and unlocated jobs last. Needs a home
+            location; without one it falls back to best match.
+        company: alphabetical by employer.
+        """
+        if sort == "newest":
+            return queryset.annotate(
+                sort_date=Coalesce("posted_at", TruncDate("created_at"))
+            ).order_by("-sort_date", "-created_at", "-score")
+        if sort == "pay":
+            return queryset.order_by(
+                F("salary_max_annual").desc(nulls_last=True),
+                F("salary_min_annual").desc(nulls_last=True),
+                "-score",
+            )
+        if sort == "closest" and "commute_miles" in queryset.query.annotations:
+            return queryset.order_by(F("commute_miles").asc(nulls_last=True), "-score")
+        if sort == "company":
+            return queryset.order_by(Lower("company_name"), "-score")
+        return queryset.order_by("-score", "-created_at")
 
     @staticmethod
     def _filter_by_salary(queryset, params):

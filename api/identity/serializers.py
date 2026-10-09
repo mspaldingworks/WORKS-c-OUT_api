@@ -29,10 +29,32 @@ class SkillSerializer(serializers.ModelSerializer):
 
 
 class JobFilterPreferencesSerializer(serializers.ModelSerializer):
+    home_latitude = serializers.FloatField(allow_null=True, required=False, min_value=-90, max_value=90)
+    home_longitude = serializers.FloatField(allow_null=True, required=False, min_value=-180, max_value=180)
+    radius_miles = serializers.IntegerField(required=False, min_value=1, max_value=500)
+
     class Meta:
         model = JobFilterPreferences
-        fields = ["salary", "remote", "job_type", "match_score", "updated_at"]
+        fields = ["salary", "remote", "distance", "posted_date", "job_type", "match_score",
+                  "easy_apply", "home_label", "home_latitude", "home_longitude",
+                  "radius_miles", "sort", "updated_at"]
         read_only_fields = ["updated_at"]
+
+    def validate(self, attrs):
+        # Half a coordinate pair is worse than none: every distance would be
+        # measured from somewhere on the equator or the prime meridian.
+        lat = attrs.get("home_latitude", getattr(self.instance, "home_latitude", None))
+        lng = attrs.get("home_longitude", getattr(self.instance, "home_longitude", None))
+        if (lat is None) != (lng is None):
+            raise serializers.ValidationError(
+                "Home location needs both a latitude and a longitude, or neither."
+            )
+        if lat is None and "home_label" not in attrs and (
+            "home_latitude" in attrs or "home_longitude" in attrs
+        ):
+            # Clearing the coordinates clears the name shown for them too.
+            attrs["home_label"] = ""
+        return attrs
 
 
 class LLMCredentialSerializer(serializers.ModelSerializer):

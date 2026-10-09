@@ -12,6 +12,7 @@ import json
 import re
 import urllib.request
 
+from .placement import REMOTE, coordinates, posted_on, work_arrangement
 from .salary import parse_salary
 from .scoring import score_posting
 
@@ -61,19 +62,37 @@ def _employment_types(item):
     return tokens
 
 
-def derive_facets(item):
+FACET_FIELDS = [
+    "salary_min_annual", "salary_max_annual", "is_remote", "employment_types",
+    "work_arrangement", "latitude", "longitude", "posted_at",
+]
+
+
+def derive_facets(item, reference_date=None):
     """
     The filterable facets pulled out of a scraped item and stored as columns:
-    annualized salary bounds, remote flag, normalized job-type tokens. Reused by
-    both ingest and the backfill so stored rows and new ones agree.
+    annualized salary bounds, working arrangement, coordinates, listing date and
+    normalized job-type tokens. Reused by both ingest and the backfill so stored
+    rows and new ones agree.
+
+    `reference_date` is the day the item was scraped — what a relative "posted
+    3 days ago" is counted back from. Ingest leaves it as today; the backfill
+    passes each row's own created_at.
     """
     if not isinstance(item, dict):
         return {"salary_min_annual": None, "salary_max_annual": None,
-                "is_remote": False, "employment_types": []}
+                "is_remote": False, "employment_types": [], "work_arrangement": "",
+                "latitude": None, "longitude": None, "posted_at": None}
+    arrangement = work_arrangement(item)
+    latitude, longitude = coordinates(item)
     return {
         **parse_salary(item),
-        "is_remote": bool(item.get("isRemote")),
+        "is_remote": arrangement == REMOTE,
         "employment_types": _employment_types(item),
+        "work_arrangement": arrangement,
+        "latitude": latitude,
+        "longitude": longitude,
+        "posted_at": posted_on(item, reference_date),
     }
 
 

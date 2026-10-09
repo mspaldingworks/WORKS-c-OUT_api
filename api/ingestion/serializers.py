@@ -3,6 +3,7 @@ from rest_framework.validators import UniqueValidator
 
 from .ats import describe
 from .details import describe as describe_details
+from .mappers import derive_facets
 from .skills import summarise as summarise_skills
 from .models import IngestedPosting
 
@@ -16,6 +17,14 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
     sign_in_url = serializers.SerializerMethodField()
     details = serializers.SerializerMethodField()
     skills = serializers.SerializerMethodField()
+    # Miles from her saved home, when the feed request had one to measure from
+    # (see IngestedPostingViewSet._with_commute). Null for remote jobs and for
+    # postings with no known location.
+    distance_miles = serializers.SerializerMethodField()
+
+    def get_distance_miles(self, posting):
+        miles = getattr(posting, "commute_miles", None)
+        return round(miles, 1) if miles is not None else None
 
     def get_details(self, posting):
         return describe_details(posting)
@@ -68,14 +77,23 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
         fields = ["id", "source", "title", "company_name", "url", "apply_url", "raw_payload",
                   "status", "score", "score_reasons", "created_at",
                   "salary_min_annual", "salary_max_annual", "is_remote", "employment_types",
+                  "work_arrangement", "posted_at", "distance_miles",
                   "platform", "requires_account", "sign_in_url", "details", "skills"]
         extra_kwargs = {"raw_payload": {"write_only": True}}
         # Facets are derived from raw_payload at ingest, never set by the client.
         read_only_fields = ["status", "created_at", "score", "score_reasons",
-                            "salary_min_annual", "salary_max_annual", "is_remote", "employment_types"]
+                            "salary_min_annual", "salary_max_annual", "is_remote", "employment_types",
+                            "work_arrangement", "latitude", "longitude", "posted_at"]
         # Meta-level validators only; the url field also gets its own
         # UniqueValidator from the model constraint — cleared in __init__ below.
         validators = []
+
+    def create(self, validated_data):
+        # Postings pushed straight to /ingest/ skip the Apify mapper, so derive
+        # the filter facets here too — otherwise they'd be invisible to every
+        # salary, workplace, distance and date filter.
+        facets = derive_facets(validated_data.get("raw_payload") or {})
+        return super().create({**facets, **validated_data})
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
