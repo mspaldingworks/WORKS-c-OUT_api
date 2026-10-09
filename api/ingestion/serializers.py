@@ -77,7 +77,7 @@ class IngestedPostingSerializer(serializers.ModelSerializer):
         fields = ["id", "source", "title", "company_name", "url", "apply_url", "raw_payload",
                   "status", "score", "score_reasons", "created_at",
                   "salary_min_annual", "salary_max_annual", "is_remote", "employment_types",
-                  "work_arrangement", "posted_at", "distance_miles",
+                  "work_arrangement", "posted_at", "latitude", "longitude", "distance_miles",
                   "platform", "requires_account", "sign_in_url", "details", "skills"]
         extra_kwargs = {"raw_payload": {"write_only": True}}
         # Facets are derived from raw_payload at ingest, never set by the client.

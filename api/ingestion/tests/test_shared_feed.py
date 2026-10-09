@@ -80,7 +80,9 @@ class SharedPostingFeedTests(TestCase):
     def test_the_job_itself_still_comes_through(self):
         row = self.get().json()['results'][0]
 
-        for field in ('id', 'title', 'company_name', 'url', 'details', 'skills'):
+        for field in ('id', 'title', 'company_name', 'url', 'details', 'skills',
+                      'work_arrangement', 'posted_at', 'latitude', 'longitude',
+                      'salary_min_annual', 'salary_max_annual', 'requires_account'):
             with self.subTest(field=field):
                 self.assertIn(field, row)
 

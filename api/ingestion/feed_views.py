@@ -42,6 +42,9 @@ PERSONAL_FIELDS = frozenset({
     'generated_materials',
     'owner',
     'status',
+    # Miles from one person's saved home. Never populated here (the feed has
+    # no user), but it describes a person, so it is listed with the rest.
+    'distance_miles',
 })
 
 MAX_LIMIT = 500
