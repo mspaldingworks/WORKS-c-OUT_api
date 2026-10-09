@@ -39,6 +39,15 @@ class IngestedPosting(models.Model):
     # Normalized lowercase tokens ("full_time", "contract") for __contains
     # filtering without reaching back into raw_payload.
     employment_types = models.JSONField(default=list, blank=True)
+    # Remote / hybrid / on-site, blank when the posting doesn't say. is_remote
+    # stays as the long-standing boolean and agrees with this (see placement.py).
+    work_arrangement = models.CharField(max_length=10, blank=True, db_index=True)
+    # The job's own location, for distance-from-home filtering and sorting.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
+    # The day the employer listed it, which is what "newest" and "posted within"
+    # mean — created_at is only when the scraper happened to see it.
+    posted_at = models.DateField(null=True, blank=True, db_index=True)
     # Cached cover letter / tailored resume, so re-opening a posting doesn't
     # re-run (and re-pay for) generation.
     generated_materials = models.JSONField(default=dict, blank=True)

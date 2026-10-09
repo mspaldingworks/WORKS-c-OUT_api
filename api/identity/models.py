@@ -124,22 +124,54 @@ class ResumeVersion(models.Model):
 
 
 class JobFilterPreferences(models.Model):
-    """Which optional Job-Feed filters this account wants surfaced.
+    """Which optional Job-Feed filters this account wants surfaced, plus the
+    settings those filters run on (home location, radius, default sort).
 
-    The feed can offer several filters (salary, remote, job type, match score),
-    but showing all of them at once is noise — the point is to let each account
-    pick the few it cares about so the filter bar stays legible. One row per
-    account, created with defaults on first read (see the API view). Salary is on
-    by default because it's the filter the feature was built around.
+    The feed can offer several filters (salary, workplace, distance, posting
+    date, job type, match score, no-account-needed), but showing all of them at
+    once is noise — the point is to let each account pick the few it cares
+    about so the filter bar stays legible. One row per account, created with
+    defaults on first read (see the API view).
     """
+
+    class Sort(models.TextChoices):
+        BEST = "best", "Best match"
+        NEWEST = "newest", "Newest"
+        PAY = "pay", "Highest pay"
+        CLOSEST = "closest", "Closest"
+        COMPANY = "company", "Company A–Z"
 
     owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                   related_name="job_filter_preferences")
     salary = models.BooleanField(default=True)
-    remote = models.BooleanField(default=False)
+    # The Workplace filter (remote / hybrid / on-site). Named for the remote-only
+    # toggle it grew out of, so existing rows and clients keep working.
+    remote = models.BooleanField(default=True)
+    distance = models.BooleanField(default=True)
+    posted_date = models.BooleanField(default=True)
     job_type = models.BooleanField(default=False)
     match_score = models.BooleanField(default=False)
+    # Hide postings whose employer portal demands an account before showing the
+    # form (Workday, iCIMS, …) — the ones she can't finish from her phone.
+    easy_apply = models.BooleanField(default=False)
+
+    # Where distances are measured from. Geocoded on the device (the app turns a
+    # typed city or ZIP into coordinates), so the server never calls out to a
+    # geocoding service. The label is only for showing back to her.
+    home_label = models.CharField(max_length=120, blank=True)
+    home_latitude = models.FloatField(null=True, blank=True)
+    home_longitude = models.FloatField(null=True, blank=True)
+    # The last radius she picked, so the distance filter reopens where she left it.
+    radius_miles = models.PositiveSmallIntegerField(default=25)
+    sort = models.CharField(max_length=10, choices=Sort.choices, default=Sort.BEST)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def home(self):
+        """(lat, lng) or None when no home location has been set."""
+        if self.home_latitude is None or self.home_longitude is None:
+            return None
+        return self.home_latitude, self.home_longitude
 
     class Meta:
         verbose_name = "job filter preferences"

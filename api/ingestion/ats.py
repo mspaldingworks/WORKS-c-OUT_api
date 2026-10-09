@@ -86,3 +86,9 @@ def describe(url):
                 "sign_in_url": _sign_in_url(url, parsed, style) if requires_account else "",
             }
     return blank
+
+
+# The host fragments whose portals want an account first — what the feed's
+# "No account needed" filter excludes. Derived from PLATFORMS so the two can't
+# drift apart.
+ACCOUNT_GATED_HOSTS = tuple(fragment for fragment, _, requires_account, _ in PLATFORMS if requires_account)

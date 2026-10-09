@@ -25,6 +25,24 @@ class IngestViewTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(IngestedPosting.objects.count(), 1)
 
+    def test_derives_filter_facets_from_the_payload(self):
+        # Without this, postings pushed here were invisible to every filter.
+        response = self.client.post(
+            self.url,
+            data={"source": "email", "title": "Analyst", "raw_payload": {
+                "isRemote": True, "datePublished": "2026-09-01",
+                "salary": {"salaryMin": 70000, "salaryMax": 80000, "salaryType": "yearly"},
+            }},
+            content_type="application/json",
+            HTTP_X_INGESTION_KEY=TEST_KEY,
+        )
+        self.assertEqual(response.status_code, 201, response.content)
+        posting = IngestedPosting.objects.get()
+        self.assertEqual(posting.work_arrangement, "remote")
+        self.assertTrue(posting.is_remote)
+        self.assertEqual(posting.salary_max_annual, 80000)
+        self.assertEqual(str(posting.posted_at), "2026-09-01")
+
     def test_accepts_a_batch(self):
         response = self.client.post(
             self.url,

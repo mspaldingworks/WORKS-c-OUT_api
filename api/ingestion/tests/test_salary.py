@@ -59,7 +59,8 @@ class DeriveFacetsTests(SimpleTestCase):
         self.assertEqual(
             derive_facets(None),
             {"salary_min_annual": None, "salary_max_annual": None,
-             "is_remote": False, "employment_types": []},
+             "is_remote": False, "employment_types": [], "work_arrangement": "",
+             "latitude": None, "longitude": None, "posted_at": None},
         )
 
     def test_normalize_item_carries_facets(self):
