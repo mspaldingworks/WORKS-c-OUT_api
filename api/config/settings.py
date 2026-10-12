@@ -135,6 +135,16 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Only the two endpoints that can't ask for a credential first (see
+    # identity.auth_views) are throttled, per client address.
+    "DEFAULT_THROTTLE_RATES": {
+        "sign-up": "10/hour",
+        "sign-in": "30/hour",
+    },
+    # Host nginx is the one proxy in front of this, and appends the caller's
+    # address to X-Forwarded-For. Counting from the end means a caller can't
+    # dodge a throttle by sending a made-up X-Forwarded-For of their own.
+    "NUM_PROXIES": 1,
 }
 
 # Shared secret an external workflow (Apify webhooks, n8n) presents in the

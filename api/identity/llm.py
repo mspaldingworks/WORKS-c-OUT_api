@@ -10,6 +10,11 @@ base_url + model — so five providers, two code paths.
 
 Callers pass an `LLMConfig` (from `resolve_config(owner)`) or None to mean
 "use the server's Anthropic key".
+
+The server's key is not everyone's to spend. An account someone made for
+themselves in the app (see `auth_views`) has to bring its own: anyone can make
+one, so paying for theirs would be an open tab. `resolve_config` is where that
+is decided, which is why every caller goes through it.
 """
 
 import logging
@@ -54,6 +59,13 @@ PROVIDERS = {
 }
 
 
+# Accounts made through sign-up are put in this group, and membership is what
+# withholds the server's key. A group rather than a column so it needs no
+# migration, and so she can lift it for one person from the admin by taking
+# them out of the group.
+SELF_MADE_GROUP = "Signed up in the app"
+
+
 class LLMUnavailable(Exception):
     """The model couldn't be reached, or no usable provider is configured.
     Message is safe to show the user."""
@@ -67,23 +79,39 @@ class LLMConfig:
     base_url: str
 
 
+# What an account with no key of its own gets when the server's isn't offered
+# to it: `complete` answers this with "add your own API key", without calling
+# anything.
+NO_KEY = LLMConfig(provider="anthropic", api_key="", model="", base_url="")
+
+
+def uses_server_key(owner):
+    """Whether the server's Anthropic key covers this account when it has no
+    key of its own. True for the owner and partner-provisioned members; false
+    for an account made through sign-up."""
+    return not owner.groups.filter(name=SELF_MADE_GROUP).exists()
+
+
 def resolve_config(owner):
-    """The owner's active LLMCredential as an LLMConfig, or None to fall back to
-    the server Anthropic key. Defaults model/base_url from PROVIDERS when blank."""
+    """The owner's active LLMCredential as an LLMConfig. Without a usable one:
+    None to fall back to the server Anthropic key, or NO_KEY for an account
+    that has to bring its own. Defaults model/base_url from PROVIDERS when blank."""
     if owner is None or not getattr(owner, "is_authenticated", False):
         return None
     from .models import LLMCredential
 
+    fallback = None if uses_server_key(owner) else NO_KEY
+
     cred = LLMCredential.objects.filter(owner=owner, is_active=True).first()
     if cred is None:
-        return None
+        return fallback
     try:
         api_key = cred.get_key()
     except Exception:
         logger.warning("Could not decrypt LLM key for owner %s", getattr(owner, "pk", "?"))
-        return None
+        return fallback
     if not api_key:
-        return None
+        return fallback
 
     registry = PROVIDERS.get(cred.provider, {})
     return LLMConfig(

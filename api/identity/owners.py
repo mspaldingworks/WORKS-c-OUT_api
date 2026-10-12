@@ -26,7 +26,17 @@ def get_default_owner():
             raise NoDefaultOwner(f"WORKS_COUT_OWNER_EMAIL is set to {email!r} but no such user exists.")
     try:
         return User.objects.get()
-    except (User.DoesNotExist, User.MultipleObjectsReturned):
-        raise NoDefaultOwner(
-            "Can't resolve a default owner — set WORKS_COUT_OWNER_EMAIL or ensure exactly one user exists."
-        )
+    except User.DoesNotExist:
+        pass
+    except User.MultipleObjectsReturned:
+        # Anyone can now make an account (see auth_views), so "the only user"
+        # stops holding the first time someone signs up. The one superuser is
+        # still unambiguous, and keeps ingestion and the shared feed alive on
+        # a server where the email was never set.
+        try:
+            return User.objects.get(is_superuser=True)
+        except (User.DoesNotExist, User.MultipleObjectsReturned):
+            pass
+    raise NoDefaultOwner(
+        "Can't resolve a default owner — set WORKS_COUT_OWNER_EMAIL or ensure exactly one user exists."
+    )

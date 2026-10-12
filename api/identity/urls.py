@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from .auth_views import AccountView, SignInView, SignUpView
 from .partner_views import (
     PartnerAccountDetailView,
     PartnerAccountView,
@@ -28,6 +29,11 @@ router.register("resumes", ResumeVersionViewSet)
 router.register("ai-credentials", LLMCredentialViewSet)
 
 urlpatterns = [
+    # Accounts made and signed in to from the app itself. Sign-up and sign-in
+    # take no token; "me" says whose token this is.
+    path("auth/sign-up/", SignUpView.as_view(), name="auth-sign-up"),
+    path("auth/sign-in/", SignInView.as_view(), name="auth-sign-in"),
+    path("auth/me/", AccountView.as_view(), name="auth-me"),
     # Stateless — parses and answers without creating a row. Listed ahead of
     # the router so it can never be read as a detail route.
     path("review-document/", DocumentReviewView.as_view(), name="review-document"),
