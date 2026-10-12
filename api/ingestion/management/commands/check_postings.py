@@ -16,9 +16,12 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        # The sweep only reads a posting's links and title. Leaving the scraped
+        # payload out matters because this runs inside the web container and
+        # shares its memory limit with the gunicorn workers.
         queryset = IngestedPosting.objects.filter(
             status=IngestedPosting.Status.NEW
-        ).order_by("-score")
+        ).defer("raw_payload", "generated_materials", "score_reasons").order_by("-score")
         if options["limit"]:
             queryset = queryset[: options["limit"]]
 

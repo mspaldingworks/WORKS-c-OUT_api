@@ -12,4 +12,5 @@ python manage.py collectstatic --noinput
 # killed mid-request otherwise (shows up as a bare 500).
 # Cloud Run injects $PORT and routes to it; locally there's no PORT and 8000 is
 # what docker-compose publishes. One entrypoint serves both.
-exec gunicorn config.wsgi:application --bind "0.0.0.0:${PORT:-8000}" --workers 2 --timeout 300
+# --config: the per-request memory cleanup lives in gunicorn.conf.py.
+exec gunicorn config.wsgi:application --config gunicorn.conf.py --bind "0.0.0.0:${PORT:-8000}" --workers 2 --timeout 300
