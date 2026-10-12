@@ -1,0 +1,12 @@
+[Unit]
+Description=WORKS(c)OUT — retire job postings the employer has taken down
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# --delay 1 keeps the sweep polite; the check is conservative and only retires
+# a posting on proof (404/410, or the page saying the role is closed).
+ExecStart=/usr/bin/docker exec works-c-out-api-web-1 python manage.py check_postings --delay 1
+# One request per posting, each allowed 20s: bound a sweep that hangs.
+TimeoutStartSec=2h

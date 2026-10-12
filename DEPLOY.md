@@ -21,6 +21,15 @@ Nothing is shared, so either can be rebuilt, redeployed or deleted without
 touching the other. **Never** run `docker compose down -v` or `docker volume
 prune` on the shared VPS — Postgres data and media live in volumes there.
 
+## Scheduled work on the VPS
+
+`deploy/works-c-out-freshness.service` and `.timer` retire postings the
+employer has taken down, once a day. They are systemd units (the box has no
+cron); copy both to `/etc/systemd/system/`, then
+`systemctl daemon-reload && systemctl enable --now works-c-out-freshness.timer`.
+Without the sweep the feed only grows, and the size of the feed response is
+what sets the web container's memory use (see `api/gunicorn.conf.py`).
+
 ## Cloud Run
 
 The image is the same one compose builds; the entrypoint binds `$PORT` when

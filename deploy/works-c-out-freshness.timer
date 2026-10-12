@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily freshness sweep of the WORKS(c)OUT job feed
+
+[Timer]
+# A quiet hour (04:30 Eastern in summer), and an hour after the nightly
+# database backup, so each night's dump is taken before the sweep writes.
+OnCalendar=*-*-* 08:30:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
