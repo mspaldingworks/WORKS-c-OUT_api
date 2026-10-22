@@ -232,3 +232,83 @@ def upload_pdf_quietly(name, data, owner):
     except Exception:
         logger.exception("Drive upload failed for %s", name)
     return ""
+
+
+# What a picked file may be. Google Docs are exported to Word so they go
+# through the same checks and text extraction as an uploaded .docx.
+GOOGLE_DOC = "application/vnd.google-apps.document"
+GOOGLE_FOLDER = "application/vnd.google-apps.folder"
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+IMPORTABLE_MIME_TYPES = {
+    "application/pdf": "",
+    DOCX_MIME: "",
+    "text/plain": "",
+    "text/markdown": "",
+    "application/rtf": "",
+    "text/rtf": "",
+    GOOGLE_DOC: ".docx",
+}
+
+
+def access_token(credentials):
+    """A fresh short-lived access token, for the Picker running in the browser."""
+    import google.auth.transport.requests
+
+    credentials.refresh(google.auth.transport.requests.Request())
+    return credentials.token
+
+
+def file_metadata(credentials, file_id):
+    """id, name, mimeType and size of one file — 404s unless the app may see it.
+
+    Under drive.file that means a file the app created, or one the person
+    picked in the Picker; nothing else in their Drive is reachable."""
+    response = _session(credentials).get(
+        f"{FILES_URL}/{file_id}", params={"fields": "id,name,mimeType,size,trashed"}, timeout=30,
+    )
+    if response.status_code == 404:
+        raise DriveUnavailable("That file isn't available to WORKS(c)OUT — pick it again from Drive.")
+    if response.status_code >= 400:
+        raise DriveUnavailable(f"Drive refused ({response.status_code}).")
+    return response.json()
+
+
+def download_document(credentials, file_id, max_bytes):
+    """
+    Returns (filename, bytes) for one picked document, exporting a Google Doc
+    to .docx. Refuses anything that isn't a document, or is over `max_bytes`.
+    """
+    meta = file_metadata(credentials, file_id)
+    mime = meta.get("mimeType", "")
+    if mime not in IMPORTABLE_MIME_TYPES:
+        raise DriveUnavailable(f"{meta.get('name', 'That file')} isn't a PDF, Word or Google Doc.")
+    if int(meta.get("size") or 0) > max_bytes:
+        raise DriveUnavailable(f"{meta.get('name', 'That file')} is too large.")
+
+    session = _session(credentials)
+    if mime == GOOGLE_DOC:
+        response = session.get(f"{FILES_URL}/{file_id}/export", params={"mimeType": DOCX_MIME},
+                               timeout=60, stream=True)
+    else:
+        response = session.get(f"{FILES_URL}/{file_id}", params={"alt": "media"}, timeout=60, stream=True)
+    if response.status_code >= 400:
+        raise DriveUnavailable(f"Couldn't download {meta.get('name', 'that file')} ({response.status_code}).")
+
+    data = b""
+    for chunk in response.iter_content(64 * 1024):
+        data += chunk
+        if len(data) > max_bytes:
+            raise DriveUnavailable(f"{meta.get('name', 'That file')} is too large.")
+
+    name = meta.get("name") or "document"
+    suffix = IMPORTABLE_MIME_TYPES[mime]
+    if suffix and not name.lower().endswith(suffix):
+        name += suffix
+    return name, data
+
+
+def folder_metadata(credentials, folder_id):
+    meta = file_metadata(credentials, folder_id)
+    if meta.get("mimeType") != GOOGLE_FOLDER or meta.get("trashed"):
+        raise DriveUnavailable("That isn't a folder in your Drive.")
+    return meta

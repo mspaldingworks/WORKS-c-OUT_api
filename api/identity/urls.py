@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .auth_views import AccountView, SignInView, SignUpView
+from .drive_picker import DriveFolderView, DriveImportView, DrivePickerLinkView, DrivePickerPageView
 from .partner_views import (
     PartnerAccountDetailView,
     PartnerAccountView,
@@ -45,6 +46,10 @@ urlpatterns = [
     path("drive/connect/", DriveConnectView.as_view(), name="drive-connect"),
     path("drive/callback/", DriveCallbackView.as_view(), name="drive-callback"),
     path("drive/disconnect/", DriveDisconnectView.as_view(), name="drive-disconnect"),
+    path("drive/picker-link/", DrivePickerLinkView.as_view(), name="drive-picker-link"),
+    path("drive/picker/", DrivePickerPageView.as_view(), name="drive-picker"),
+    path("drive/import/", DriveImportView.as_view(), name="drive-import"),
+    path("drive/folder/", DriveFolderView.as_view(), name="drive-folder"),
     # Provisioning accounts for a partner app's members, so each member owns
     # their own rows here instead of sharing one service account.
     path("partner-accounts/", PartnerAccountView.as_view(), name="partner-accounts"),

@@ -89,7 +89,7 @@ def _posting_brief(posting):
     return "\n".join(lines)
 
 
-def generate_materials(posting, master_resume, config=None):
+def generate_materials(posting, master_resume, config=None, writing_sample=""):
     """
     Returns a dict with cover_letter, resume_summary, resume_bullets, gaps.
     `config` is the account's chosen LLM provider (identity.llm.resolve_config);
@@ -111,10 +111,22 @@ def generate_materials(posting, master_resume, config=None):
             "This posting didn't include enough description text to tailor against."
         )
 
+    sample = ""
+    if writing_sample.strip():
+        # Voice only. The letter may describe a different job, employer or
+        # claim; none of that is evidence of anything for this posting.
+        sample = (
+            "A COVER LETTER THE CANDIDATE WROTE BEFORE. Match its voice, tone and "
+            "sentence rhythm in the new letter. It is NOT a source of facts: every "
+            "claim must still come from the background above.\n"
+            f"{writing_sample}\n\n"
+            "----\n\n"
+        )
     user_content = (
         "CANDIDATE BACKGROUND (the only facts you may use):\n"
         f"{master_resume}\n\n"
         "----\n\n"
+        f"{sample}"
         "JOB POSTING TO TAILOR FOR:\n"
         f"{_posting_brief(posting)}"
     )

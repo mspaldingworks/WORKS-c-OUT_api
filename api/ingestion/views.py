@@ -14,6 +14,7 @@ from tracker.serializers import ApplicationSerializer
 
 from identity.llm import resolve_config
 from identity.models import JobFilterPreferences, ProfessionalProfile
+from identity.resume_text import writing_sample_for
 from identity.owners import NoDefaultOwner, get_default_owner
 
 from .ats import ACCOUNT_GATED_HOSTS
@@ -298,6 +299,7 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
                 posting,
                 profile.master_resume if profile else "",
                 config=resolve_config(request.user),
+                writing_sample=writing_sample_for(request.user),
             )
         except GenerationUnavailable as error:
             return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)

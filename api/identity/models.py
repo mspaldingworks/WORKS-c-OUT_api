@@ -100,7 +100,19 @@ class ProfileLink(models.Model):
 
 
 class ResumeVersion(models.Model):
+    """One uploaded document: a résumé, or a cover letter the person wrote.
+
+    Cover letters share the table because they share everything else — the
+    upload checks, the per-account cap, discard/restore. They're never parsed
+    for skills; drafts read the newest one as a sample of the person's voice.
+    """
+
+    class Kind(models.TextChoices):
+        RESUME = "resume", "Résumé"
+        COVER_LETTER = "cover_letter", "Cover letter"
+
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="resumes")
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.RESUME)
     title = models.CharField(max_length=200)
     file = models.FileField(upload_to="identity/resumes/", validators=[validate_resume_file])
     notes = models.TextField(blank=True)
@@ -209,6 +221,10 @@ class LLMCredential(models.Model):
     # Optional overrides; blank means "use the provider default" (see llm.PROVIDERS).
     model = models.CharField(max_length=100, blank=True)
     base_url = models.URLField(blank=True)
+    # Anthropic only: a key made outside any workspace must name one on every
+    # request (the anthropic-workspace-id header). Keys made inside a
+    # workspace leave this blank. An id like "wrkspc_…", not a secret.
+    workspace_id = models.CharField(max_length=64, blank=True)
     is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -258,6 +274,9 @@ class GoogleDriveConnection(models.Model):
     # The app-created Drive folder the PDFs go into, and the connected account,
     # for display. drive.file scope means the app only ever sees files it made.
     folder_id = models.CharField(max_length=200, blank=True)
+    # The folder's name, for showing where files go. Blank for the app's own
+    # "WORKS(c)OUT Applications" folder made at connect time.
+    folder_name = models.CharField(max_length=255, blank=True)
     account_email = models.CharField(max_length=254, blank=True)
     enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

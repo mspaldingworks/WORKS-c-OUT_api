@@ -23,3 +23,29 @@ def extract_resume_text(file):
         return extract_document_text(data, file.name or "")
     except DocumentUnreadable as error:
         raise TextExtractionFailed(str(error)) from error
+
+
+# How much of a cover letter drafts see as a voice sample. A letter is a page;
+# this is room for one with a little to spare.
+WRITING_SAMPLE_CHARS = 6000
+
+
+def writing_sample_for(owner):
+    """
+    The text of this account's newest cover letter, or "" — what drafts read
+    to match the person's own voice. Never a source of facts. A letter that
+    can't be read is skipped rather than failing the draft.
+    """
+    from .models import ResumeVersion
+
+    letter = (
+        ResumeVersion.objects.filter(owner=owner, kind=ResumeVersion.Kind.COVER_LETTER,
+                                     discarded_at__isnull=True)
+        .order_by("-created_at").first()
+    )
+    if letter is None:
+        return ""
+    try:
+        return extract_resume_text(letter.file)[:WRITING_SAMPLE_CHARS]
+    except Exception:
+        return ""

@@ -1,3 +1,5 @@
+import re
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
@@ -10,6 +12,8 @@ from .models import (
     Skill,
 )
 from .validators import MAX_RESUMES_PER_OWNER, validate_resume_file
+
+WORKSPACE_ID = re.compile(r"wrkspc_[A-Za-z0-9]{6,58}")
 
 
 class ProfessionalProfileSerializer(serializers.ModelSerializer):
@@ -66,8 +70,17 @@ class LLMCredentialSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LLMCredential
-        fields = ["id", "provider", "api_key", "masked_key", "model", "base_url", "is_active", "updated_at"]
+        fields = ["id", "provider", "api_key", "masked_key", "model", "base_url", "workspace_id",
+                  "is_active", "updated_at"]
         read_only_fields = ["is_active", "updated_at"]
+
+    def validate_workspace_id(self, value):
+        value = (value or "").strip()
+        if value and not WORKSPACE_ID.fullmatch(value):
+            raise serializers.ValidationError(
+                "A workspace ID starts with wrkspc_ — copy it from the Claude Console's Workspaces page."
+            )
+        return value
 
     def validate(self, attrs):
         provider = attrs.get("provider") or getattr(self.instance, "provider", None)
@@ -85,10 +98,14 @@ class LLMCredentialSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         raw = validated_data.pop("api_key", "")
-        if not raw:
-            raise serializers.ValidationError({"api_key": "An API key is required."})
         owner = validated_data.pop("owner")
         provider = validated_data["provider"]
+        existing = LLMCredential.objects.filter(owner=owner, provider=provider).first()
+        # A key is needed the first time. After that, saving without one keeps
+        # the stored key and changes only the settings beside it — so adding a
+        # workspace ID doesn't mean pasting the key in again.
+        if not raw and not (existing and existing.api_key_encrypted):
+            raise serializers.ValidationError({"api_key": "An API key is required."})
         # Upsert on (owner, provider) so re-saving a provider updates it rather
         # than colliding with the unique constraint.
         cred, _ = LLMCredential.objects.get_or_create(
@@ -96,7 +113,9 @@ class LLMCredentialSerializer(serializers.ModelSerializer):
         )
         cred.model = validated_data.get("model", cred.model)
         cred.base_url = validated_data.get("base_url", cred.base_url)
-        cred.set_key(raw)
+        cred.workspace_id = validated_data.get("workspace_id", cred.workspace_id)
+        if raw:
+            cred.set_key(raw)
         # Saving a key makes it the active provider ("Save & use").
         LLMCredential.objects.filter(owner=owner).exclude(pk=cred.pk).update(is_active=False)
         cred.is_active = True
@@ -105,7 +124,7 @@ class LLMCredentialSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         raw = validated_data.pop("api_key", None)
-        for field in ("model", "base_url"):
+        for field in ("model", "base_url", "workspace_id"):
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
         if raw:
@@ -123,7 +142,7 @@ class ProfileLinkSerializer(serializers.ModelSerializer):
 class ResumeVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ResumeVersion
-        fields = ["id", "title", "file", "notes", "parsed_data", "created_at"]
+        fields = ["id", "kind", "title", "file", "notes", "parsed_data", "created_at"]
         read_only_fields = ["parsed_data", "created_at"]
 
     def validate_file(self, value):
@@ -141,7 +160,7 @@ class ResumeVersionSerializer(serializers.ModelSerializer):
             active = ResumeVersion.objects.filter(owner=owner, discarded_at__isnull=True)
             if active.count() >= MAX_RESUMES_PER_OWNER:
                 raise serializers.ValidationError(
-                    f"You can keep at most {MAX_RESUMES_PER_OWNER} résumé versions — "
-                    "delete one before adding another."
+                    f"You can keep at most {MAX_RESUMES_PER_OWNER} résumés and cover letters — "
+                    "remove one before adding another."
                 )
         return attrs

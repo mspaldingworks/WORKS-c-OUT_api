@@ -61,6 +61,7 @@ def _run(job, posting_ids, owner):
     from ingestion.services import promote_posting_to_application
     from identity.models import ProfessionalProfile
     from identity.llm import resolve_config
+    from identity.resume_text import writing_sample_for
 
     from .models import Application
     from .sheets import sync_sheet_quietly
@@ -69,6 +70,7 @@ def _run(job, posting_ids, owner):
     master_resume = profile.master_resume if profile else ""
     # The owner's chosen AI provider (their own key), or None for the server default.
     config = resolve_config(owner)
+    writing_sample = writing_sample_for(owner)
 
     for posting_id in posting_ids:
         result = {"posting_id": posting_id, "ok": False, "detail": ""}
@@ -87,7 +89,8 @@ def _run(job, posting_ids, owner):
         materials_error = ""
         if not posting.generated_materials:
             try:
-                posting.generated_materials = generate_materials(posting, master_resume, config=config)
+                posting.generated_materials = generate_materials(posting, master_resume, config=config,
+                                                                 writing_sample=writing_sample)
                 posting.save(update_fields=["generated_materials"])
             except GenerationUnavailable as error:
                 # Queue it anyway — a posting without a letter is still worth

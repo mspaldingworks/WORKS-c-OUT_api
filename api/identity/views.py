@@ -143,13 +143,19 @@ class JobFilterPreferencesView(RetrieveUpdateAPIView):
 
 
 def _drive_status(connection):
+    from .drive_picker import picker_configured
+
     if connection is None:
-        return {"connected": False, "enabled": False, "account_email": "", "folder_id": ""}
+        return {"connected": False, "enabled": False, "account_email": "", "folder_id": "",
+                "folder_name": "", "picker_available": picker_configured()}
     return {
         "connected": connection.connected,
         "enabled": connection.enabled,
         "account_email": connection.account_email,
         "folder_id": connection.folder_id,
+        # Blank means the app's own "WORKS(c)OUT Applications" folder.
+        "folder_name": connection.folder_name,
+        "picker_available": picker_configured(),
     }
 
 
@@ -291,6 +297,9 @@ class ResumeVersionViewSet(OwnerScopedViewSet):
         first run so re-opening it is free; pass ?refresh=1 to redo it.
         """
         resume = self.get_object()
+        if resume.kind != ResumeVersion.Kind.RESUME:
+            return Response({"detail": "Only résumés are read for skills. A cover letter is used for your writing voice."},
+                            status=status.HTTP_400_BAD_REQUEST)
         if resume.parsed_data and request.query_params.get("refresh") != "1":
             return Response(resume.parsed_data)
 

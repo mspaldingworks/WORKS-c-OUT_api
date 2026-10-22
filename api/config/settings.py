@@ -197,6 +197,9 @@ APIFY_TOKEN = os.environ.get("APIFY_TOKEN", "")
 # Used to generate tailored application materials. Without it the materials
 # endpoint returns a clear "not configured" message rather than failing oddly.
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# Only needed when the server key above was made outside any workspace: such a
+# key must name one on every request (anthropic-workspace-id header).
+ANTHROPIC_WORKSPACE_ID = os.environ.get("ANTHROPIC_WORKSPACE_ID", "")
 
 # Encrypts users' own LLM API keys at rest (identity.LLMCredential). Any string
 # works — it's run through a KDF to a valid Fernet key. Falls back to deriving
@@ -245,6 +248,14 @@ GOOGLE_OAUTH_RETURN_URL = os.environ.get("GOOGLE_OAUTH_RETURN_URL", "workscout:/
 # refresh tokens are minted and refreshed with THIS client. Falls back to
 # GOOGLE_OAUTH_* when unset (which won't actually complete the redirect flow).
 GOOGLE_DRIVE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "")
+# Google Picker, for choosing résumés, cover letters and a save folder from a
+# person's own Drive. Picking is what grants the drive.file scope access to a
+# file the app didn't create, so no wider Drive scope is ever requested. Needs
+# an API key with the Picker API enabled (restricted to this API's host) and
+# the Cloud project *number* the Drive OAuth client belongs to.
+GOOGLE_PICKER_API_KEY = os.environ.get("GOOGLE_PICKER_API_KEY", "")
+GOOGLE_CLOUD_PROJECT_NUMBER = os.environ.get("GOOGLE_CLOUD_PROJECT_NUMBER", "")
+GOOGLE_PICKER_RETURN_URL = os.environ.get("GOOGLE_PICKER_RETURN_URL", "workscout://drive-picked")
 GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "")
 
 # The suite is run inside the production container (there's no separate test
@@ -276,6 +287,9 @@ if "test" in sys.argv:
     GOOGLE_OAUTH_REFRESH_TOKEN = ""
     GOOGLE_DRIVE_OAUTH_CLIENT_ID = ""
     GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = ""
+    GOOGLE_PICKER_API_KEY = ""
+    GOOGLE_CLOUD_PROJECT_NUMBER = ""
+    ANTHROPIC_WORKSPACE_ID = ""
 
 LOGIN_URL = "/admin/login/"
 LOGIN_REDIRECT_URL = "/admin/"

@@ -77,6 +77,8 @@ class LLMConfig:
     api_key: str
     model: str
     base_url: str
+    # Anthropic keys made outside any workspace must name one per request.
+    workspace_id: str = ""
 
 
 # What an account with no key of its own gets when the server's isn't offered
@@ -119,6 +121,7 @@ def resolve_config(owner):
         api_key=api_key,
         model=cred.model or registry.get("default_model", ""),
         base_url=cred.base_url or registry.get("base_url", ""),
+        workspace_id=cred.workspace_id,
     )
 
 
@@ -127,13 +130,15 @@ def complete(system, user, *, config=None, max_tokens=4096):
     LLMUnavailable with a user-facing message on any failure."""
     if config is None or config.provider == "anthropic":
         api_key = config.api_key if config else settings.ANTHROPIC_API_KEY
+        workspace_id = config.workspace_id if config else settings.ANTHROPIC_WORKSPACE_ID
         model = (config.model if config and config.model else DEFAULT_ANTHROPIC_MODEL)
         if not api_key:
             raise LLMUnavailable(
                 "No AI provider is configured. Add your own API key in "
                 "Identity → AI provider."
             )
-        return _complete_anthropic(system, user, api_key=api_key, model=model, max_tokens=max_tokens)
+        return _complete_anthropic(system, user, api_key=api_key, model=model, max_tokens=max_tokens,
+                                   workspace_id=workspace_id)
 
     if not config.api_key:
         raise LLMUnavailable("No API key set for this provider.")
@@ -142,10 +147,23 @@ def complete(system, user, *, config=None, max_tokens=4096):
     return _complete_openai(system, user, config=config)
 
 
-def _complete_anthropic(system, user, *, api_key, model, max_tokens):
+# What Anthropic says when a key made outside any workspace is used without
+# naming one. Matched to turn a raw 400 into something a person can act on.
+_NO_WORKSPACE = "not scoped to a workspace"
+
+NO_WORKSPACE_MESSAGE = (
+    "This Claude API key isn't tied to a workspace, so Anthropic needs to know "
+    "which one to use. Either create a new key inside a workspace in the Claude "
+    "Console, or add your workspace ID (it starts with wrkspc_) next to this key "
+    "in Identity → AI provider."
+)
+
+
+def _complete_anthropic(system, user, *, api_key, model, max_tokens, workspace_id=""):
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    headers = {"anthropic-workspace-id": workspace_id} if workspace_id else None
+    client = anthropic.Anthropic(api_key=api_key, default_headers=headers)
     try:
         # Streamed with adaptive thinking: a long response with a big thinking
         # budget runs past the SDK's non-streaming ceiling and is exactly what
@@ -160,6 +178,8 @@ def _complete_anthropic(system, user, *, api_key, model, max_tokens):
             response = stream.get_final_message()
     except Exception as error:
         logger.exception("Anthropic call failed")
+        if _NO_WORKSPACE in str(error):
+            raise LLMUnavailable(NO_WORKSPACE_MESSAGE) from error
         raise LLMUnavailable(f"Couldn't reach the model: {error}") from error
     return "".join(block.text for block in response.content if block.type == "text")
 
