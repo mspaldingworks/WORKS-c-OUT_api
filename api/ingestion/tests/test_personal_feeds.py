@@ -207,6 +207,13 @@ class BulkSkillTests(TestCase):
         self.assertEqual([row["name"] for row in response.json()], ["Grant Writing"])
         self.assertEqual(Skill.objects.filter(owner=self.user).count(), 2)
 
+    def test_removing_a_skill_returns_it_for_undo(self):
+        skill = Skill.objects.get(owner=self.user, name="Python")
+        response = self.client.delete(reverse("skill-detail", args=[skill.pk]), **self.auth)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Python")
+        self.assertFalse(Skill.objects.filter(pk=skill.pk).exists())
+
     def test_an_empty_list_is_refused(self):
         response = self.client.post(reverse("skill-bulk"), data={"skills": []},
                                     content_type="application/json", **self.auth)

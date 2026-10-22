@@ -66,6 +66,14 @@ class SkillViewSet(OwnerScopedViewSet):
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
 
+    def destroy(self, request, *args, **kwargs):
+        # The removed row comes back (200, not an empty 204) so the app can
+        # offer Undo by re-adding exactly what was there.
+        skill = self.get_object()
+        data = self.get_serializer(skill).data
+        skill.delete()
+        return Response(data)
+
     @action(detail=False, methods=["post"])
     def bulk(self, request):
         """
