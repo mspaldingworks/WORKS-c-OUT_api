@@ -66,6 +66,32 @@ class SkillViewSet(OwnerScopedViewSet):
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
 
+    @action(detail=False, methods=["post"])
+    def bulk(self, request):
+        """
+        POST /api/identity/skills/bulk/ {"skills": [{name, category, proficiency}, …]}
+
+        Adds every suggestion from a résumé in one go. Names the account
+        already has (ignoring case) are skipped rather than refused, so
+        applying the same résumé twice is harmless. Returns the skills created.
+        """
+        items = request.data.get("skills") if isinstance(request.data, dict) else None
+        if not isinstance(items, list) or not items:
+            return Response({"detail": "Send a non-empty list of skills."}, status=status.HTTP_400_BAD_REQUEST)
+
+        owned = {name.lower() for name in Skill.objects.filter(owner=request.user).values_list("name", flat=True)}
+        created = []
+        for item in items[:100]:
+            serializer = SkillSerializer(data=item if isinstance(item, dict) else {})
+            if not serializer.is_valid():
+                continue
+            name = serializer.validated_data["name"].strip()
+            if not name or name.lower() in owned:
+                continue
+            owned.add(name.lower())
+            created.append(serializer.save(owner=request.user, name=name))
+        return Response(SkillSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
 
 class LLMCredentialViewSet(OwnerScopedViewSet):
     """CRUD for an account's own AI provider keys. The key is write-only and
@@ -272,4 +298,13 @@ class ResumeVersionViewSet(OwnerScopedViewSet):
 
         resume.parsed_data = parsed
         resume.save(update_fields=["parsed_data"])
+
+        # The first résumé an account processes becomes the career history its
+        # cover letters and tailored résumés are written from. Its own words,
+        # verbatim — nothing the model inferred — and never over the top of a
+        # history the account already has.
+        profile, _ = ProfessionalProfile.objects.get_or_create(owner=request.user)
+        if not profile.master_resume.strip():
+            profile.master_resume = text
+            profile.save(update_fields=["master_resume", "updated_at"])
         return Response(parsed)

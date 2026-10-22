@@ -1,120 +1,71 @@
 """
-Ranks ingested job postings against Madelyn's actual profile.
+Ranks a job posting against one account's own profile.
 
-Indeed fuzzy-matches even quoted queries, so a "director of development" search
-returns nursing and construction roles. Scoring is what makes the feed usable:
-the top of the list should be worth reading, and the noise should sink.
+Everything a score rests on comes from the account itself: the skills it has
+confirmed (usually from an uploaded résumé), and the home location and radius
+it set in Identity. Nothing here assumes who the person is, what field they
+work in or where they live — an account with no skills and no home gets a
+neutral score that only reflects freshness and whether the job pays, which is
+the honest answer when there's nothing to compare against.
 
 Every posting also gets human-readable `reasons`, so a rank can be argued with
-rather than taken on faith — if something scores high for the wrong reason,
-that's visible and fixable here instead of being a black box.
+rather than taken on faith.
 """
 
-# (patterns, points, lane label) — the five lanes agreed with her, weighted by
-# how central each is to her current work.
-LANE_MATCHES = [
-    (["director of development", "development director", "development manager",
-      "major gifts", "annual fund", "donor relations", "advancement director",
-      "fundraising", "philanthropy", "development officer", "gift officer"], 40, "development"),
-    (["grant writer", "grants manager", "grant manager", "grants coordinator",
-      "grants specialist", "grant specialist", "grants administrator",
-      "sponsored programs", "grant coordinator"], 40, "grants"),
-    (["communications manager", "communications director", "communications coordinator",
-      "communications specialist", "marketing manager", "marketing coordinator",
-      "content manager", "public relations", "digital communications"], 32, "communications"),
-    (["web content", "digital content", "web manager", "webmaster", "wordpress",
-      "digital marketing", "seo specialist", "content strategist",
-      "web coordinator", "digital specialist"], 32, "web/digital"),
-    (["program manager", "program director", "program coordinator",
-      "youth program", "community program", "program administrator"], 28, "programs"),
-]
+import hashlib
+import json
+from dataclasses import dataclass, field
 
-# Roles that keep surfacing through Indeed's loose matching and are plainly not
-# hers. A hard penalty rather than a filter, so nothing is silently hidden.
-OFF_TARGET = [
-    "nurse", "nursing", "rn/lpn", "lpn", "cna", "physician", "dental", "dentist",
-    "pharmacy", "pharmacist", "caregiver", "phlebotom", "radiolog", "surgical",
-    "truck", "cdl", "driver", "warehouse", "forklift", "construction", "electrician",
-    "plumber", "hvac", "welder", "machinist", "mechanic", "roofing", "landscap",
-    "janitor", "custodian", "housekeep", "security guard", "cashier", "line cook",
-    "server", "dishwasher", "barista", "retail associate", "stocker",
-]
+from .geo import miles_between
+from .skills import posting_text, skills_mentioned
+
+# Bump when the rules below change, so every account's stored scores are
+# recomputed on its next feed load (see ingestion.fit.refresh_if_stale).
+SCORING_VERSION = 2
+
+MAX_SCORE = 100
+# Where a posting starts before anything about the account is known: low
+# enough that a strong skill match clearly separates, high enough that a fresh
+# local job still beats a stale one when no skills are set.
+BASELINE = 20
 
 # Title words that mean the role isn't paid employment. Checked against the
 # title only: descriptions routinely say "manage volunteers" or "recruit interns"
 # in roles that are perfectly good paid jobs.
-UNPAID_TITLES = ["volunteer", "unpaid", "pro bono", "intern ", "internship"]
-
-# Deliberately narrow. An earlier version included "community" and "youth",
-# which appear in nearly every job description ("our community of users") and
-# scored Canon, Amentum, and Healogics as mission-driven employers.
-NONPROFIT_TEXT_SIGNALS = [
-    "nonprofit", "non-profit", "not-for-profit", "501(c)", "philanthrop",
-    "united way", "charitable organization", "our mission is to",
-]
-
-# Checked against the employer name only, where these words actually mean something.
-NONPROFIT_NAME_SIGNALS = [
-    "foundation", "coalition", "ministries", "council", "society", "association",
-    "league", "ymca", "ywca", "goodwill", "habitat for humanity", "salvation army",
-    "boys & girls", "boys and girls", "united way", "museum", "public library",
-]
-
-# Things she actually does, worth points when the description mentions them.
-SKILL_SIGNALS = [
-    "fundrais", "grant", "donor", "stewardship", "crm", "salesforce", "raiser's edge",
-    "little green light", "wordpress", "google analytics", "campaign", "social media",
-    "email marketing", "newsletter", "canva", "adobe", "volunteer", "stakeholder",
-    "board of directors", "budget", "kpi", "storytelling", "copywriting", "seo",
-    "event planning", "partnership",
-]
-
-SENIOR_TITLES = ["director", "manager", "lead", "head of", "chief"]
-JUNIOR_TITLES = ["intern", "internship", "assistant", "entry level", "apprentice", "trainee"]
-
-# Louisville metro, including the southern Indiana side she'd realistically commute to.
-METRO_CITIES = [
-    "louisville", "jeffersontown", "shively", "st matthews", "saint matthews", "prospect",
-    "middletown", "fern creek", "okolona", "pleasure ridge park", "valley station",
-    "jeffersonville", "new albany", "clarksville", "sellersburg", "charlestown",
-    "floyds knobs", "georgetown", "shelbyville", "la grange", "lagrange", "mount washington",
-    "shepherdsville", "crestwood", "pewee valley", "simpsonville", "taylorsville",
-]
-
-MAX_SCORE = 100
+UNPAID_TITLES = ["volunteer", "unpaid", "pro bono"]
 
 
-def _text_of(payload):
-    parts = [
-        str(payload.get("title") or ""),
-        str(payload.get("companyName") or ""),
-        str(payload.get("descriptionText") or "")[:6000],
-    ]
-    return " ".join(parts).lower()
+@dataclass(frozen=True)
+class ScoringProfile:
+    """What one account's scores are computed against."""
+
+    skills: tuple = ()
+    # (latitude, longitude), or None when no home location is saved.
+    home: tuple | None = None
+    radius_miles: int = 25
+
+    def signature(self):
+        """A short fingerprint of everything that affects a score. Stored per
+        account; when it changes, that account's postings are rescored."""
+        blob = json.dumps({
+            "v": SCORING_VERSION,
+            "skills": sorted(self.skills),
+            "home": [round(value, 4) for value in self.home] if self.home else None,
+            "radius": self.radius_miles,
+        }, sort_keys=True)
+        return hashlib.sha1(blob.encode()).hexdigest()
 
 
-def _location_points(payload):
-    if payload.get("isRemote") is True:
-        return 15, "Remote"
+BLANK_PROFILE = ScoringProfile()
 
-    location = payload.get("location")
-    city = state = ""
-    if isinstance(location, dict):
-        city = str(location.get("city") or "").lower()
-        state = str(location.get("formattedAddressShort") or "").lower()
-    elif isinstance(location, str):
-        city = location.lower()
 
-    haystack = f"{city} {state}"
-    if "remote" in haystack:
-        return 15, "Remote"
-    if any(metro in haystack for metro in METRO_CITIES):
-        return 15, "Louisville area"
-    if " ky" in haystack or " in" in haystack or "kentucky" in haystack or "indiana" in haystack:
-        return 4, "Kentucky/Indiana, outside the metro"
-    if haystack.strip():
-        return -12, "Outside commuting range and not remote"
-    return 0, None
+@dataclass
+class Fit:
+    score: int
+    reasons: list = field(default_factory=list)
+    # Which of the account's skills the posting asks for. Stored on the row so
+    # the feed's skill filter runs in the database.
+    matched_skills: list = field(default_factory=list)
 
 
 def _freshness_points(payload):
@@ -131,79 +82,80 @@ def _freshness_points(payload):
     return 0, None
 
 
-def _salary_points(payload):
-    salary = payload.get("salary")
-    if not isinstance(salary, dict):
+def _location_points(profile, is_remote, latitude, longitude):
+    """
+    Remote work is within reach of anywhere, so it never loses points for
+    distance. Otherwise distance only counts once the account has a home.
+    """
+    if is_remote:
+        return 10, "Remote"
+    if profile.home is None or latitude is None or longitude is None:
         return 0, None
-    # An hourly wage is a strong signal this isn't a director-level role — it
-    # avoids having to invent a target salary she never gave us.
-    if str(salary.get("salaryType") or "").lower() == "hourly":
-        return -10, "Hourly wage role"
-    maximum = salary.get("salaryMax") or salary.get("salaryMin")
-    if isinstance(maximum, (int, float)) and maximum >= 60000:
-        return 6, f"Salary listed up to ${int(maximum):,}"
-    return 0, None
+    miles = miles_between(profile.home[0], profile.home[1], latitude, longitude)
+    radius = max(profile.radius_miles, 1)
+    if miles <= radius:
+        return 15, f"{miles:.0f} mi from home"
+    if miles <= radius * 2:
+        return 3, f"{miles:.0f} mi from home, a little past your {radius} mi radius"
+    return -15, f"{miles:.0f} mi from home and not remote"
 
 
-def score_posting(payload):
-    """Returns (score 0-100, list of human-readable reasons)."""
+def _skill_points(profile, payload):
+    title = str(payload.get("title") or "")
+    in_title = skills_mentioned(title, profile.skills)
+    matched = skills_mentioned(posting_text(payload), profile.skills)
+
+    points, reasons = 0, []
+    if in_title:
+        # The title is what the job *is*; the description is everything it
+        # touches. A title hit is worth far more than any one mention.
+        points += min(25 + 5 * (len(in_title) - 1), 35)
+        reasons.append(f"Title matches your {', '.join(sorted(in_title)[:3])}")
+    if matched:
+        points += min(len(matched) * 5, 30)
+        shown = ", ".join(matched[:4]) + ("…" if len(matched) > 4 else "")
+        reasons.append(f"{len(matched)} of your skills appear: {shown}")
+    return points, reasons, matched
+
+
+def score_posting(payload, profile=BLANK_PROFILE, *, is_remote=None, latitude=None, longitude=None):
+    """
+    Returns a Fit for one posting against one account's profile.
+
+    `is_remote` and the coordinates are the stored facets (see
+    mappers.derive_facets); left as None, remoteness is read from the payload
+    and distance is skipped.
+    """
     if not isinstance(payload, dict):
-        return 0, []
+        return Fit(score=0)
 
-    text = _text_of(payload)
-    title = str(payload.get("title") or "").lower()
-    score = 25  # neutral baseline so a bare posting isn't scored at zero
+    if is_remote is None:
+        is_remote = payload.get("isRemote") is True
+
+    score = BASELINE
     reasons = []
 
-    best_lane_points, best_lane = 0, None
-    for patterns, points, lane in LANE_MATCHES:
-        if any(pattern in title for pattern in patterns):
-            if points > best_lane_points:
-                best_lane_points, best_lane = points, lane
-        elif any(pattern in text for pattern in patterns) and points // 3 > best_lane_points:
-            best_lane_points, best_lane = points // 3, f"{lane} (mentioned, not in title)"
-    if best_lane:
-        score += best_lane_points
-        reasons.append(f"Matches your {best_lane} lane")
+    if profile.skills:
+        points, skill_reasons, matched = _skill_points(profile, payload)
+        score += points
+        reasons.extend(skill_reasons)
+    else:
+        matched = []
+        reasons.append("Add a résumé in Identity to rank jobs by your skills")
 
-    if any(word in title for word in OFF_TARGET):
-        score -= 45
-        reasons.append("Looks like a clinical/trades/retail role — probably noise")
-
-    # Unpaid work is not a job. "Volunteer Grant Writer" scored a perfect 100
-    # because it matches the grants lane on every keyword — it just doesn't pay.
-    # Recorded here but applied at the very end: zeroing the running total mid
-    # function doesn't work, because every rule below would add points back on.
-    is_unpaid = any(word in title for word in UNPAID_TITLES)
-    if is_unpaid:
-        reasons.append("Unpaid or volunteer position")
-
-    company = str(payload.get("companyName") or "").lower()
-    if any(signal in text for signal in NONPROFIT_TEXT_SIGNALS) or \
-       any(signal in company for signal in NONPROFIT_NAME_SIGNALS):
-        score += 10
-        reasons.append("Nonprofit or mission-driven employer")
-
-    matched_skills = {signal for signal in SKILL_SIGNALS if signal in text}
-    if matched_skills:
-        skill_points = min(len(matched_skills) * 2, 12)
-        score += skill_points
-        reasons.append(f"{len(matched_skills)} of your skills appear in the description")
-
-    if any(word in title for word in SENIOR_TITLES):
-        score += 8
-        reasons.append("Director/manager level")
-    if any(word in title for word in JUNIOR_TITLES):
-        score -= 10
-        reasons.append("Junior or assistant level")
-
-    for points, reason in (_location_points(payload), _freshness_points(payload), _salary_points(payload)):
+    for points, reason in (
+        _location_points(profile, is_remote, latitude, longitude),
+        _freshness_points(payload),
+    ):
         score += points
         if reason:
             reasons.append(reason)
 
-    if is_unpaid:
-        # No amount of lane fit makes an unpaid post a job she can take.
-        return 0, reasons
+    title = str(payload.get("title") or "").lower()
+    if any(word in title for word in UNPAID_TITLES):
+        # Applied last: zeroing the running total mid-function doesn't work,
+        # because every rule after it would add points back on.
+        reasons.append("Unpaid or volunteer position")
+        return Fit(score=0, reasons=reasons, matched_skills=matched)
 
-    return max(0, min(MAX_SCORE, score)), reasons
+    return Fit(score=max(0, min(MAX_SCORE, score)), reasons=reasons, matched_skills=matched)

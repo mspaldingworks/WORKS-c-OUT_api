@@ -4,44 +4,57 @@ from .mappers import normalize_item
 from .models import IngestedPosting
 
 
-def ingest_items(items, source, owner):
+def ingest_items(items, source, owner=None, owners=None):
     """
-    Normalize a batch of scraped items and save the ones we haven't seen before.
+    Normalize a batch of scraped items and save the ones each account hasn't
+    seen before.
+
+    `owners` is every account whose feed receives the batch (usually
+    fit.feed_recipients()); `owner` alone is the one-account form. Each gets
+    its own copy, scored against its own profile.
 
     Deduped on (owner, url), both against what's already stored and within the
-    batch itself — a scraper re-run returns mostly the same jobs, and the user
-    shouldn't have to re-triage them.
+    batch itself — a scraper re-run returns mostly the same jobs, and nobody
+    should have to re-triage them.
 
-    Returns counts: created / duplicates / unmappable.
+    Returns counts summed across accounts: created / duplicates / unmappable.
     """
+    from .fit import apply_fit, profile_for
+
+    recipients = list(owners) if owners is not None else [owner]
     normalized = [mapped for mapped in (normalize_item(item, source) for item in items) if mapped]
     unmappable = len(items) - len(normalized)
-
-    # Deliberately NOT filtered by source: the six per-lane searches overlap, so
-    # the same job arrives from several of them. Scoping this to one source is
-    # what produced duplicate postings — and duplicate applications behind them.
     batch_urls = {mapped["url"] for mapped in normalized if mapped["url"]}
-    already_stored = set(
-        IngestedPosting.objects.filter(owner=owner, url__in=batch_urls).values_list("url", flat=True)
-    )
 
-    to_create = []
-    seen_in_batch = set()
-    for mapped in normalized:
-        url = mapped["url"]
-        if url:
-            if url in already_stored or url in seen_in_batch:
-                continue
-            seen_in_batch.add(url)
-        to_create.append(IngestedPosting(owner=owner, **mapped))
+    created = duplicates = 0
+    for recipient in recipients:
+        # Deliberately NOT filtered by source: the per-search Apify tasks
+        # overlap, so the same job arrives from several of them. Scoping this
+        # to one source is what once produced duplicate postings — and
+        # duplicate applications behind them.
+        already_stored = set(
+            IngestedPosting.objects.filter(owner=recipient, url__in=batch_urls).values_list("url", flat=True)
+        )
+        profile = profile_for(recipient)
+        to_create = []
+        seen_in_batch = set()
+        for mapped in normalized:
+            url = mapped["url"]
+            if url:
+                if url in already_stored or url in seen_in_batch:
+                    continue
+                seen_in_batch.add(url)
+            to_create.append(apply_fit(IngestedPosting(owner=recipient, **mapped), profile))
 
-    # ignore_conflicts covers the race where two runs finish at once and both
-    # pass the check above; the partial unique index is the real guarantee.
-    IngestedPosting.objects.bulk_create(to_create, ignore_conflicts=True)
+        # ignore_conflicts covers the race where two runs finish at once and
+        # both pass the check above; the partial unique index is the real guarantee.
+        IngestedPosting.objects.bulk_create(to_create, ignore_conflicts=True)
+        created += len(to_create)
+        duplicates += len(normalized) - len(to_create)
 
     return {
-        "created": len(to_create),
-        "duplicates": len(normalized) - len(to_create),
+        "created": created,
+        "duplicates": duplicates,
         "unmappable": unmappable,
     }
 

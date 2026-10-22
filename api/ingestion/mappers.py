@@ -14,7 +14,6 @@ import urllib.request
 
 from .placement import REMOTE, coordinates, posted_on, work_arrangement
 from .salary import parse_salary
-from .scoring import score_posting
 
 TITLE_KEYS = ("title", "positionName", "jobTitle", "position", "name")
 COMPANY_KEYS = ("companyName", "company", "employer", "companyInfo", "organization")
@@ -121,8 +120,8 @@ def normalize_item(item, source):
     if len(apply_url) > MAX_URL:
         apply_url = ""
 
-    score, reasons = score_posting(item)
-
+    # No score here: a score belongs to one account's copy of the posting,
+    # and is set per account when the copies are made (see services).
     return {
         "source": source,
         "title": title[:MAX_TITLE],
@@ -130,8 +129,6 @@ def normalize_item(item, source):
         "url": url,
         "apply_url": apply_url,
         "raw_payload": item,
-        "score": score,
-        "score_reasons": reasons,
         **derive_facets(item),
     }
 

@@ -18,6 +18,7 @@ from identity.owners import NoDefaultOwner, get_default_owner
 
 from .ats import ACCOUNT_GATED_HOSTS
 from .generation import GenerationUnavailable, generate_materials
+from .fit import apply_fit, feed_recipients, profile_for, refresh_if_stale, seed_feed
 from .geo import miles_from
 from .mappers import fetch_dataset_items
 from .models import IngestedPosting
@@ -68,6 +69,14 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
     queryset = IngestedPosting.objects.all()
     serializer_class = IngestedPostingSerializer
 
+    def list(self, request, *args, **kwargs):
+        # A new account starts from a copy of the current feed, and any change
+        # to its skills, home or radius since the last load is scored in now —
+        # once per load, however many edits were made in between.
+        seed_feed(request.user)
+        refresh_if_stale(request.user)
+        return super().list(request, *args, **kwargs)
+
     def get_queryset(self):
         queryset = super().get_queryset().filter(owner=self.request.user)
         params = self.request.query_params
@@ -93,6 +102,20 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
                 # is_remote and work_arrangement agree for anything ingested or
                 # backfilled; honoring both keeps a row set by hand findable.
                 match |= Q(is_remote=True)
+            queryset = queryset.filter(match)
+
+        if _is_true(params.get("exclude_remote")):
+            # The feed's Remote toggle, switched off: no remote jobs at all,
+            # whatever the other filters say.
+            queryset = queryset.exclude(self._remote())
+
+        # The account's own skills, as stored on each posting at scoring time.
+        # Any of them matches.
+        skills = [name for name in params.getlist("skill") if name][:40]
+        if skills:
+            match = Q()
+            for name in skills:
+                match |= Q(matched_skills__contains=[name])
             queryset = queryset.filter(match)
 
         job_types = [token for token in params.getlist("job_type") if token]
@@ -144,7 +167,7 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
 
         queryset = queryset.annotate(
             commute_miles=Case(
-                When(work_arrangement=REMOTE, then=Value(None)),
+                When(self._remote(), then=Value(None)),
                 When(latitude__isnull=True, then=Value(None)),
                 When(longitude__isnull=True, then=Value(None)),
                 default=miles_from(*home),
@@ -155,9 +178,15 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
         if radius is not None and radius > 0:
             in_range = Q(commute_miles__lte=radius)
             if _is_true(params.get("include_remote"), default=True):
-                in_range |= Q(work_arrangement=REMOTE)
+                in_range |= self._remote()
             queryset = queryset.filter(in_range)
         return queryset
+
+    @staticmethod
+    def _remote():
+        # is_remote and work_arrangement agree for anything ingested or
+        # backfilled; honoring both keeps a row set by hand findable.
+        return Q(work_arrangement=REMOTE) | Q(is_remote=True)
 
     @staticmethod
     def _filter_by_search(queryset, query):
@@ -291,7 +320,9 @@ class IngestedPostingViewSet(viewsets.ModelViewSet):
         confirmation dialog, because dialogs get dismissed reflexively."""
         posting = self.get_object()
         posting.status = IngestedPosting.Status.NEW
-        posting.save(update_fields=["status"])
+        # Back in the feed, so ranked against the profile as it is now.
+        apply_fit(posting, profile_for(request.user))
+        posting.save(update_fields=["status", "score", "score_reasons", "matched_skills"])
         return Response(self.get_serializer(posting).data)
 
     @action(detail=True, methods=["post"])
@@ -396,4 +427,10 @@ class ApifyWebhookView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        return Response(ingest_items(items, source=source, owner=owner))
+        # Every account that signs in directly gets the batch, each scored for
+        # itself. The default owner is resolved above only so a misconfigured
+        # server still fails loudly rather than silently feeding no one.
+        recipients = feed_recipients()
+        if owner not in recipients:
+            recipients.append(owner)
+        return Response(ingest_items(items, source=source, owners=recipients))

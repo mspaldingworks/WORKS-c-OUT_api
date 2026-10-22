@@ -1,6 +1,6 @@
 """
-Works out which of her skills a posting asks for, and which it asks for that
-she doesn't list.
+Works out which of an account's skills a posting asks for, and which it asks
+for that the account doesn't list.
 
 Two separate questions, and the second is the useful one: a job matching twelve
 of her skills still isn't worth much if it also wants four things she's never
@@ -23,7 +23,9 @@ ALIASES = {
     "Grant Writing": ["grant writing", "grant writer", "grants management", "grant proposal"],
     "Donor Relations": ["donor relations", "donor stewardship", "major gifts",
                         "donor cultivation", "donor", "stewardship"],
-    "Nonprofit Development": ["nonprofit development", "advancement", "philanthropy"],
+    "Nonprofit Development": ["nonprofit development", "advancement", "philanthropy",
+                              "director of development", "development director",
+                              "development manager"],
     "Google Analytics": ["google analytics", "ga4", "web analytics"],
     "Email Marketing": ["email marketing", "email campaign", "e-newsletter", "newsletter",
                         "email communications", "crm email"],
@@ -103,32 +105,56 @@ def _mentions(text, terms):
     return any(_pattern(term).search(text) for term in terms)
 
 
-def summarise(posting, skill_names):
-    """
-    Returns {matched: [...], missing: [...]} for one posting.
+@lru_cache(maxsize=512)
+def _skill_pattern(name):
+    # One alternation per skill rather than one search per phrasing: rescoring
+    # an account runs this over every posting it holds.
+    terms = sorted({term.lower() for term in skill_terms(name) if term.strip()}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(term) for term in terms) + r")\b", re.I)
 
-    `skill_names` is her stored skill list, passed in so the caller can read it
-    once for a whole feed rather than per posting.
-    """
-    payload = payload_of(posting)
+
+def posting_text(payload):
+    """The readable text of a scraped payload: description, title and any
+    listed requirements. What both skill matching and fit scoring search."""
+    if not isinstance(payload, dict):
+        return ""
     # Usually a list, sometimes one string; anything else isn't readable text.
     requirements = payload.get("requirements")
     if isinstance(requirements, str):
         requirements = [requirements]
     elif not isinstance(requirements, list):
         requirements = []
-    text = " ".join([
-        str(payload.get("descriptionText") or "")[:20000],
+    return " ".join([
+        str(payload.get("descriptionText") or payload.get("description") or "")[:20000],
         str(payload.get("title") or ""),
         " ".join(str(item) for item in requirements if item),
     ])
+
+
+def skill_terms(name):
+    """A skill's own name plus any known phrasings of it."""
+    return [name] + ALIASES.get(name, [])
+
+
+def skills_mentioned(text, skill_names):
+    """Which of `skill_names` the text asks for, word-boundary matched."""
+    if not text.strip():
+        return []
+    return sorted(name for name in skill_names if _skill_pattern(name).search(text))
+
+
+def summarise(posting, skill_names):
+    """
+    Returns {matched: [...], missing: [...]} for one posting.
+
+    `skill_names` is the account's stored skill list, passed in so the caller
+    can read it once for a whole feed rather than per posting.
+    """
+    text = posting_text(payload_of(posting))
     if not text.strip():
         return {"matched": [], "missing": []}
 
-    matched = [
-        name for name in skill_names
-        if _mentions(text, [name] + ALIASES.get(name, []))
-    ]
+    matched = skills_mentioned(text, skill_names)
 
     owned = {name.lower() for name in skill_names}
     missing = [
@@ -136,4 +162,4 @@ def summarise(posting, skill_names):
         if label.lower() not in owned and _mentions(text, terms)
     ]
 
-    return {"matched": sorted(matched), "missing": sorted(missing)}
+    return {"matched": matched, "missing": sorted(missing)}

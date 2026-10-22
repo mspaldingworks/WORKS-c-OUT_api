@@ -93,9 +93,14 @@ def sweep(postings, opener=None, on_result=None):
     from .models import IngestedPosting
 
     summary = {"checked": 0, "retired": 0, "live": 0, "unknown": 0, "details": []}
+    # Each account holds its own copy of a posting, so the same listing turns
+    # up once per account. Ask the employer once per sweep, not once per copy.
+    verdicts = {}
     for posting in postings:
         url = posting.apply_url or posting.url
-        verdict, detail = check_url(url, opener=opener)
+        if url not in verdicts:
+            verdicts[url] = check_url(url, opener=opener)
+        verdict, detail = verdicts[url]
         summary["checked"] += 1
 
         if verdict == "gone":

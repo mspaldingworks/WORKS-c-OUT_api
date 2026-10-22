@@ -250,10 +250,16 @@ class NewAccountStartsCleanTests(AccountTestCase):
         self.assertIsNone(body["home_latitude"])
         self.assertIsNone(body["home_longitude"])
 
-    def test_its_job_feed_holds_none_of_the_owner_s_scored_postings(self):
-        response = self.client.get(reverse("ingestedposting-list"), **self.newcomer)
+    @override_settings(WORKS_COUT_OWNER_EMAIL="owner@example.test")
+    def test_its_job_feed_holds_none_of_the_owner_s_scoring(self):
+        # It starts from a copy of the current feed, so it isn't empty, but
+        # every copy is ranked against the newcomer's profile, not the owner's.
+        rows = self.client.get(reverse("ingestedposting-list"), **self.newcomer).json()
 
-        self.assertEqual(response.json(), [])
+        self.assertEqual([row["title"] for row in rows], ["Development Director"])
+        self.assertNotEqual(rows[0]["score"], 92)
+        self.assertNotIn("Matches your development lane", rows[0]["score_reasons"])
+        self.assertNotIn("Fundraising", str(rows[0]["score_reasons"]))
 
     def test_signing_up_leaves_the_owner_s_own_view_untouched(self):
         owner = self.auth(self.sign_in(email="owner@example.test").json()["token"])
@@ -262,7 +268,7 @@ class NewAccountStartsCleanTests(AccountTestCase):
         postings = self.client.get(reverse("ingestedposting-list"), **owner).json()
 
         self.assertEqual([row["name"] for row in skills], ["Fundraising"])
-        self.assertEqual([row["score"] for row in postings], [92])
+        self.assertEqual([row["title"] for row in postings], ["Development Director"])
 
 
 @override_settings(ANTHROPIC_API_KEY="the-server-key")

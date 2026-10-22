@@ -164,6 +164,9 @@ class JobFilterPreferences(models.Model):
     # The last radius she picked, so the distance filter reopens where she left it.
     radius_miles = models.PositiveSmallIntegerField(default=25)
     sort = models.CharField(max_length=10, choices=Sort.choices, default=Sort.BEST)
+    # Fingerprint of the skills, home and radius this account's postings were
+    # last scored against (see ingestion.fit). Not user-facing.
+    scoring_signature = models.CharField(max_length=40, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     @property

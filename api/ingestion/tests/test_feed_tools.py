@@ -1,5 +1,7 @@
 import datetime
 
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -17,6 +19,14 @@ class FeedToolsTests(TestCase):
     The workplace, distance, posted-within, search and no-account filters, and
     the feed's sort orders.
     """
+
+    # These fixtures carry hand-set scores; keep the feed from rescoring them
+    # against the (empty) test profile on load (see ingestion.fit).
+    def setUp(self):
+        super().setUp()
+        patcher = patch("ingestion.views.refresh_if_stale", return_value=0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @classmethod
     def setUpTestData(cls):

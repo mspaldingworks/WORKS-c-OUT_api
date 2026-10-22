@@ -25,10 +25,14 @@ class IngestedPosting(models.Model):
     apply_url = models.URLField(max_length=1000, blank=True)
     raw_payload = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)
-    # Fit against her profile, 0-100, computed at ingest. Stored rather than
-    # computed on read so the ordering is cheap and the reasoning is auditable.
+    # Fit against the owning account's profile, 0-100 (see scoring.py and
+    # fit.py). Stored rather than computed on read so the ordering is cheap
+    # and the reasoning is auditable; recomputed when that profile changes.
     score = models.PositiveSmallIntegerField(default=0, db_index=True)
     score_reasons = models.JSONField(default=list, blank=True)
+    # Which of the owner's skills this posting asks for, stored alongside the
+    # score so the feed's skill filter runs in the database.
+    matched_skills = models.JSONField(default=list, blank=True)
     # Filterable facets denormalized from raw_payload at ingest, so the feed can
     # be narrowed in the database rather than by unpacking every payload on read.
     # Salary is annualized (hourly rates × 2080, etc.) so one range compares
