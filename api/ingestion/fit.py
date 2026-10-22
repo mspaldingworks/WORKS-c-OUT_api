@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # Matches the shared partner feed's cap.
 SEED_LIMIT = 500
 
+# Rows read and written at a time when rescoring or seeding.
+BATCH = 50
+
 # Columns copied when one account's posting seeds another's feed. Personal
 # state (status, score, generated materials) is deliberately not among them.
 COPIED_FIELDS = [
@@ -92,11 +95,11 @@ def rescore_owner(owner, profile=None):
         .order_by("pk")
     )
     batch, count = [], 0
-    # Chunked: the web container shares a small memory limit, and every
-    # payload carries a full job description.
-    for posting in queryset.iterator(chunk_size=200):
+    # Small chunks: this runs inside a web worker whose container sits close
+    # to its memory limit, and every payload carries a full job description.
+    for posting in queryset.iterator(chunk_size=BATCH):
         batch.append(apply_fit(posting, profile))
-        if len(batch) >= 200:
+        if len(batch) >= BATCH:
             IngestedPosting.objects.bulk_update(batch, ["score", "score_reasons", "matched_skills"])
             count += len(batch)
             batch = []
@@ -145,12 +148,12 @@ def seed_feed(owner):
         .order_by("-created_at")[:SEED_LIMIT]
     )
     copies = []
-    for posting in source.iterator(chunk_size=200):
+    for posting in source.iterator(chunk_size=BATCH):
         copy = IngestedPosting(owner=owner, **{name: getattr(posting, name) for name in COPIED_FIELDS})
         copies.append(apply_fit(copy, profile))
 
     with transaction.atomic():
-        IngestedPosting.objects.bulk_create(copies, batch_size=200, ignore_conflicts=True)
+        IngestedPosting.objects.bulk_create(copies, batch_size=BATCH, ignore_conflicts=True)
         JobFilterPreferences.objects.update_or_create(
             owner=owner, defaults={"scoring_signature": profile.signature()},
         )
