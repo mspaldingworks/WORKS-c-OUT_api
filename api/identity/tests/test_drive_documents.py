@@ -163,7 +163,7 @@ class ImportTests(TestCase):
     @patch("tracker.drive.download_document", return_value=("fake.pdf", b"not really a pdf"))
     def test_a_file_that_is_not_what_it_claims_is_refused(self, _download):
         response = self._import(["drive-file-1"])
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["created"], [])
         self.assertTrue(response.json()["refused"][0]["detail"])
 

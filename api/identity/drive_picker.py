@@ -278,7 +278,9 @@ class DriveImportView(APIView):
             "created": ResumeVersionSerializer(created, many=True, context={"request": request}).data,
             "refused": refused,
         }
-        return Response(body, status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST)
+        # 200 when nothing was taken, not 400: the per-file reasons are the
+        # answer, and a 400 body would be read as a validation error instead.
+        return Response(body, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class DriveFolderView(APIView):
