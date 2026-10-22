@@ -60,6 +60,10 @@ class DocumentSettingsView(APIView):
             return Response({"storage": ["Connect Google Drive first to save documents there."]},
                             status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
+        # The older on/off Drive switch now follows this choice, so the two
+        # can't disagree about whether drafts go to Drive.
+        GoogleDriveConnection.objects.filter(owner=request.user).update(
+            enabled=storage != DocumentSettings.Storage.APP)
         return Response({**serializer.data, "drive_available": _drive_available(request.user)})
 
 

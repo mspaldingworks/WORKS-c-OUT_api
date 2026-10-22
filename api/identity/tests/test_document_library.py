@@ -149,6 +149,15 @@ class SettingsTests(TestCase):
         connect_drive(self.user)
         self.assertEqual(self._set("drive").json()["storage"], "drive")
 
+    def test_the_old_drive_switch_follows_the_choice(self):
+        connection = connect_drive(self.user)
+        self._set("app")
+        connection.refresh_from_db()
+        self.assertFalse(connection.enabled)
+        self._set("both")
+        connection.refresh_from_db()
+        self.assertTrue(connection.enabled)
+
     def test_app_only_needs_nothing(self):
         self.assertEqual(self._set("app").json()["storage"], "app")
 
