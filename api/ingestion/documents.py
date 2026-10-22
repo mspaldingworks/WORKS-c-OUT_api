@@ -200,4 +200,18 @@ def build_documents(application):
         application.resume_drive_url = resume_url
         application.save(update_fields=["cover_letter_drive_url", "resume_drive_url"])
 
+    # An account that keeps documents in Drive only gets no copy here — but
+    # only once Drive actually has each file. A failed upload keeps the copy
+    # here, so a letter is never lost to a Drive outage.
+    from identity.models import DocumentSettings
+
+    if DocumentSettings.storage_for(application.owner) == DocumentSettings.Storage.DRIVE:
+        dropped = []
+        for field, url in ((application.cover_letter, letter_url), (application.resume, resume_url)):
+            if url and field:
+                field.delete(save=False)
+                dropped.append(field.field.name)
+        if dropped:
+            application.save(update_fields=dropped)
+
     return written

@@ -142,8 +142,24 @@ class ProfileLinkSerializer(serializers.ModelSerializer):
 class ResumeVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ResumeVersion
-        fields = ["id", "kind", "title", "file", "notes", "parsed_data", "created_at"]
-        read_only_fields = ["parsed_data", "created_at"]
+        fields = ["id", "kind", "title", "file", "notes", "parsed_data", "drive_url", "created_at"]
+        read_only_fields = ["parsed_data", "drive_url", "created_at"]
+        extra_kwargs = {"file": {"required": True, "allow_empty_file": False}}
+
+    def to_representation(self, instance):
+        from django.urls import reverse
+
+        from .document_storage import stored_in
+
+        data = super().to_representation(instance)
+        # The token-authenticated download, never the /media/ path: that one
+        # is public to anyone who can guess it. Blank when the file is kept
+        # only in Drive.
+        request = self.context.get("request")
+        path = reverse("resumeversion-download", args=[instance.pk])
+        data["file"] = (request.build_absolute_uri(path) if request else path) if instance.file else ""
+        data["stored_in"] = stored_in(instance)
+        return data
 
     def validate_file(self, value):
         try:

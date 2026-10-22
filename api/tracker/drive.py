@@ -106,11 +106,16 @@ def resolve_drive(owner):
     """
     Where THIS owner's PDFs should go: (credentials, folder_id), or None to skip.
 
-    Priority: their own connected + enabled Drive; else — for the owner account
-    ONLY — the server's Drive, so the owner's setup keeps working and no one
-    else's drafts ever land in it; else nothing (the PDF stays on the server).
+    Never anywhere when the account keeps documents in WORKS(c)OUT only.
+    Otherwise: their own connected + enabled Drive; else — for the owner
+    account ONLY — the server's Drive, so the owner's setup keeps working and
+    no one else's drafts ever land in it; else nothing (the PDF stays on the
+    server).
     """
-    from identity.models import GoogleDriveConnection
+    from identity.models import DocumentSettings, GoogleDriveConnection
+
+    if DocumentSettings.storage_for(owner) == DocumentSettings.Storage.APP:
+        return None
 
     connection = GoogleDriveConnection.objects.filter(owner=owner, enabled=True).first()
     if connection and connection.refresh_token_encrypted and connection.folder_id:
@@ -181,6 +186,14 @@ def upload_pdf(name, data, credentials, folder_id):
 
     Returns the Drive webViewLink.
     """
+    return upload_file(name, data, credentials, folder_id).get("webViewLink", "")
+
+
+def upload_file(name, data, credentials, folder_id, mime_type="application/pdf"):
+    """
+    Put one file in the folder, replacing any previous file of the same name.
+    Returns Drive's {"id", "webViewLink"}.
+    """
     session = _session(credentials)
     existing = _existing_file_id(session, folder_id, name)
 
@@ -193,7 +206,7 @@ def upload_pdf(name, data, credentials, folder_id):
     body = b"".join([
         f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n".encode(),
         json.dumps(metadata).encode(),
-        f"\r\n--{boundary}\r\nContent-Type: application/pdf\r\n\r\n".encode(),
+        f"\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n".encode(),
         data,
         f"\r\n--{boundary}--\r\n".encode(),
     ])
@@ -208,7 +221,7 @@ def upload_pdf(name, data, credentials, folder_id):
 
     if response.status_code >= 400:
         raise DriveUnavailable(f"Drive rejected the upload ({response.status_code}): {response.text[:200]}")
-    return response.json().get("webViewLink", "")
+    return response.json()
 
 
 def upload_pdf_quietly(name, data, owner):
@@ -264,7 +277,7 @@ def file_metadata(credentials, file_id):
     Under drive.file that means a file the app created, or one the person
     picked in the Picker; nothing else in their Drive is reachable."""
     response = _session(credentials).get(
-        f"{FILES_URL}/{file_id}", params={"fields": "id,name,mimeType,size,trashed"}, timeout=30,
+        f"{FILES_URL}/{file_id}", params={"fields": "id,name,mimeType,size,trashed,webViewLink"}, timeout=30,
     )
     if response.status_code == 404:
         raise DriveUnavailable("That file isn't available to WORKS(c)OUT — pick it again from Drive.")
@@ -312,3 +325,24 @@ def folder_metadata(credentials, folder_id):
     if meta.get("mimeType") != GOOGLE_FOLDER or meta.get("trashed"):
         raise DriveUnavailable("That isn't a folder in your Drive.")
     return meta
+
+
+def drive_credentials(owner):
+    """
+    Credentials that can read this owner's own Drive files back — whatever
+    their storage choice now, since a file saved to Drive earlier still has to
+    be readable. Their connected Drive, else (owner only) the server's.
+    """
+    from identity.models import GoogleDriveConnection
+
+    connection = GoogleDriveConnection.objects.filter(owner=owner).first()
+    if connection and connection.refresh_token_encrypted:
+        return credentials_for(connection.get_token())
+    if _is_default_owner(owner) and settings.GOOGLE_OAUTH_REFRESH_TOKEN:
+        return user_credentials()
+    return None
+
+
+def download_file(credentials, file_id, max_bytes):
+    """Bytes of one file the app may see, exporting a Google Doc to .docx."""
+    return download_document(credentials, file_id, max_bytes)[1]

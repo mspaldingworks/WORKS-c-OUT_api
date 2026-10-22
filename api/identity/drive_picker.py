@@ -248,7 +248,9 @@ class DriveImportView(APIView):
         if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
             return _unavailable("Pick at least one file.", status.HTTP_400_BAD_REQUEST)
 
-        from tracker.drive import DriveUnavailable, download_document
+        from tracker.drive import DriveUnavailable, download_document, file_metadata
+
+        from .document_storage import apply_storage
 
         credentials = _credentials(connection)
         created, refused = [], []
@@ -269,7 +271,15 @@ class DriveImportView(APIView):
                 context={"request": request},
             )
             if serializer.is_valid():
-                created.append(serializer.save(owner=request.user))
+                try:
+                    drive_url = file_metadata(credentials, file_id).get("webViewLink", "")
+                except Exception:
+                    # Only the link to open it in Drive; the id still finds it.
+                    drive_url = ""
+                # The picked original is this document's Drive copy: never
+                # uploaded again, and the only copy for Drive-only accounts.
+                document = serializer.save(owner=request.user, drive_file_id=file_id, drive_url=drive_url)
+                created.append(apply_storage(document))
             else:
                 messages = [str(m) for errors in serializer.errors.values() for m in errors]
                 refused.append({"file_id": file_id, "name": name, "detail": " ".join(messages)})

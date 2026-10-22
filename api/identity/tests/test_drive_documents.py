@@ -138,9 +138,11 @@ class ImportTests(TestCase):
         connection = GoogleDriveConnection(owner=self.user, folder_id="app-folder")
         connection.set_token("refresh-token")
         connection.save()
-        patcher = patch("identity.drive_picker._credentials", return_value=object())
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for target, value in (("identity.drive_picker._credentials", object()),
+                              ("tracker.drive.file_metadata", {"webViewLink": "https://drive.test/f"})):
+            patcher = patch(target, return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def _import(self, ids, kind="resume"):
         return self.client.post(reverse("drive-import"), data={"file_ids": ids, "kind": kind},
@@ -154,6 +156,18 @@ class ImportTests(TestCase):
         self.assertEqual(created[0]["title"], "CV 2026")
         self.assertEqual(created[0]["kind"], "resume")
         self.assertEqual(ResumeVersion.objects.filter(owner=self.user).count(), 1)
+        # Picked from Drive, so Drive already has it — the original is the link.
+        self.assertEqual(created[0]["drive_url"], "https://drive.test/f")
+        self.assertEqual(created[0]["stored_in"], "both")
+
+    @patch("tracker.drive.download_document", return_value=("CV.pdf", pdf_bytes()))
+    def test_drive_only_keeps_just_the_original_in_drive(self, _download):
+        from identity.models import DocumentSettings
+
+        DocumentSettings.objects.create(owner=self.user, storage="drive")
+        created = self._import(["drive-file-1"]).json()["created"]
+        self.assertEqual(created[0]["stored_in"], "drive")
+        self.assertFalse(ResumeVersion.objects.get(owner=self.user).file)
 
     @patch("tracker.drive.download_document", return_value=("Letter.pdf", pdf_bytes()))
     def test_cover_letters_are_kept_as_cover_letters(self, _download):

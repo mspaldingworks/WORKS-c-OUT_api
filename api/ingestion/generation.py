@@ -91,6 +91,19 @@ def _posting_brief(posting):
 
 def generate_materials(posting, master_resume, config=None, writing_sample=""):
     """
+    Returns a dict with cover_letter, resume_summary, resume_bullets, gaps,
+    and generated_at (when it was written — the cover-letter library sorts by
+    it). See _generate for the rest.
+    """
+    from django.utils import timezone
+
+    materials = _generate(posting, master_resume, config=config, writing_sample=writing_sample)
+    materials["generated_at"] = timezone.now().isoformat()
+    return materials
+
+
+def _generate(posting, master_resume, config=None, writing_sample=""):
+    """
     Returns a dict with cover_letter, resume_summary, resume_bullets, gaps.
     `config` is the account's chosen LLM provider (identity.llm.resolve_config);
     None uses the server's Anthropic key. Raises GenerationUnavailable with a

@@ -3,7 +3,7 @@ import logging
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import google_oauth
+from .document_storage import DocumentUnavailable, apply_storage, document_text, download_name
 from .models import (
     GoogleDriveConnection,
     JobFilterPreferences,
@@ -27,7 +28,7 @@ from .llm import resolve_config
 
 logger = logging.getLogger(__name__)
 from .resume_parsing import ParsingUnavailable, parse_resume_text
-from .resume_text import TextExtractionFailed, extract_resume_text
+from .resume_text import TextExtractionFailed
 from .serializers import (
     JobFilterPreferencesSerializer,
     LLMCredentialSerializer,
@@ -266,6 +267,24 @@ class ResumeVersionViewSet(OwnerScopedViewSet):
         # they're gone as far as the app is concerned.
         return super().get_queryset().filter(discarded_at__isnull=True)
 
+    def perform_create(self, serializer):
+        # Checked and saved here first, then put wherever this account keeps
+        # its documents (here, Drive, or both).
+        apply_storage(serializer.save(owner=self.request.user))
+
+    @action(detail=True, methods=["get"])
+    def download(self, request, pk=None):
+        """
+        The file, through token auth. Never a public /media/ URL: résumés
+        carry a person's contact details. A document kept only in Drive has
+        no copy here; the answer then points at Drive instead.
+        """
+        resume = self.get_object()
+        if not resume.file:
+            return Response({"detail": "This document is kept in Google Drive.", "drive_url": resume.drive_url},
+                            status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(resume.file.open("rb"), as_attachment=True, filename=download_name(resume))
+
     @action(detail=True, methods=["post"])
     def discard(self, request, pk=None):
         """
@@ -304,9 +323,11 @@ class ResumeVersionViewSet(OwnerScopedViewSet):
             return Response(resume.parsed_data)
 
         try:
-            text = extract_resume_text(resume.file)
+            text = document_text(resume)
         except TextExtractionFailed as error:
             return Response({"detail": str(error)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        except DocumentUnavailable as error:
+            return Response({"detail": str(error)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         try:
             parsed = parse_resume_text(text, config=resolve_config(request.user))

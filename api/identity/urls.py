@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .auth_views import AccountView, SignInView, SignUpView
 from .drive_picker import DriveFolderView, DriveImportView, DrivePickerLinkView, DrivePickerPageView
+from .library import CoverLetterLibraryView, DocumentSettingsView
 from .partner_views import (
     PartnerAccountDetailView,
     PartnerAccountView,
@@ -50,6 +51,8 @@ urlpatterns = [
     path("drive/picker/", DrivePickerPageView.as_view(), name="drive-picker"),
     path("drive/import/", DriveImportView.as_view(), name="drive-import"),
     path("drive/folder/", DriveFolderView.as_view(), name="drive-folder"),
+    path("document-settings/", DocumentSettingsView.as_view(), name="document-settings"),
+    path("cover-letters/", CoverLetterLibraryView.as_view(), name="cover-letter-library"),
     # Provisioning accounts for a partner app's members, so each member owns
     # their own rows here instead of sharing one service account.
     path("partner-accounts/", PartnerAccountView.as_view(), name="partner-accounts"),

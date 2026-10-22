@@ -1,4 +1,6 @@
+import uuid
 from datetime import timedelta
+from pathlib import PurePath
 
 from django.conf import settings
 from django.db import models
@@ -99,6 +101,13 @@ class ProfileLink(models.Model):
         return f"{self.platform} ({self.get_status_display()})"
 
 
+def document_upload_path(instance, filename):
+    """A random name, keeping only the extension. The original name is often
+    the person's own ("Jane Doe Resume 2026.pdf"), and a guessable path is a
+    public one wherever media is served directly."""
+    return f"identity/documents/{uuid.uuid4().hex}{PurePath(filename).suffix.lower()[:10]}"
+
+
 class ResumeVersion(models.Model):
     """One uploaded document: a résumé, or a cover letter the person wrote.
 
@@ -114,7 +123,12 @@ class ResumeVersion(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="resumes")
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.RESUME)
     title = models.CharField(max_length=200)
-    file = models.FileField(upload_to="identity/resumes/", validators=[validate_resume_file])
+    # Blank when the account keeps documents in Google Drive only: the file
+    # then lives at drive_file_id and is fetched from there when it's read.
+    file = models.FileField(upload_to=document_upload_path, validators=[validate_resume_file], blank=True)
+    # The Drive copy (or, for a file picked from Drive, the original).
+    drive_file_id = models.CharField(max_length=200, blank=True)
+    drive_url = models.URLField(max_length=500, blank=True)
     notes = models.TextField(blank=True)
     # AI-extracted skill/profile suggestions from this file (see
     # resume_parsing.py). Staged here for review — nothing here is ever
@@ -332,3 +346,32 @@ class MagicLinkToken(models.Model):
     @property
     def is_usable(self):
         return self.used_at is None and timezone.now() < self.expires_at
+
+
+class DocumentSettings(models.Model):
+    """Where this account's documents are kept: uploaded résumés and cover
+    letters, and the cover letter and résumé PDFs WORKS(c)OUT writes.
+
+    BOTH is how the app always worked, so it's the default. APP keeps them
+    here and never touches Drive. DRIVE keeps the files in the person's own
+    Google Drive and no copy here — the text of a generated letter stays, since
+    reviewing and editing a draft happens in the app.
+    """
+
+    class Storage(models.TextChoices):
+        BOTH = "both", "WORKS(c)OUT and Google Drive"
+        APP = "app", "WORKS(c)OUT only"
+        DRIVE = "drive", "Google Drive only"
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                  related_name="document_settings")
+    storage = models.CharField(max_length=10, choices=Storage.choices, default=Storage.BOTH)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def storage_for(cls, owner):
+        row = cls.objects.filter(owner=owner).only("storage").first()
+        return row.storage if row else cls.Storage.BOTH
+
+    def __str__(self):
+        return f"Document settings for {self.owner}"

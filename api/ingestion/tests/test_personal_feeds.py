@@ -233,7 +233,7 @@ class MasterResumeTests(TestCase):
             )
 
     def _parse(self):
-        with patch("identity.views.extract_resume_text", return_value="Ten years of grant writing."), \
+        with patch("identity.views.document_text", return_value="Ten years of grant writing."), \
              patch("identity.views.parse_resume_text", return_value=PARSED):
             return self.client.post(reverse("resumeversion-parse", args=[self.resume.pk]), **self.auth)
 

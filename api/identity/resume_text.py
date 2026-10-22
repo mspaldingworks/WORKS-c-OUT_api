@@ -45,7 +45,10 @@ def writing_sample_for(owner):
     )
     if letter is None:
         return ""
+    from .document_storage import document_text
+
     try:
-        return extract_resume_text(letter.file)[:WRITING_SAMPLE_CHARS]
+        # Wherever it's kept — here, or only in their Drive.
+        return document_text(letter)[:WRITING_SAMPLE_CHARS]
     except Exception:
         return ""
